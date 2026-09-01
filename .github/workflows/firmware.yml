@@ -1,0 +1,32 @@
+name: Firmware
+
+on:
+  push:
+    paths:
+      - "firmware/**"
+      - "protocol/**"
+      - ".github/workflows/firmware.yml"
+  pull_request:
+    paths:
+      - "firmware/**"
+      - "protocol/**"
+      - ".github/workflows/firmware.yml"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install platformio
+      - run: pio run -e paper-mono
+        working-directory: firmware
+      - name: Protocol host test
+        run: |
+          c++ -std=c++17 -Ifirmware/src \
+            firmware/test/papermono_nfc_protocol_test.cpp \
+            -o /tmp/paper_mono_protocol_test
+          /tmp/paper_mono_protocol_test
+      - run: python -m json.tool protocol/test_vectors.json >/dev/null

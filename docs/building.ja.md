@@ -1,0 +1,63 @@
+# ビルドと書き込み
+
+## 対象ハードウェア
+
+本ファームウェアはNFC内蔵のM5Stack Paper Mono C153専用です。Paper Mono
+LiteにはNFCハードウェアがないため対応しません。
+
+## ファームウェア
+
+PlatformIO Coreを用意し、Paper MonoをUSB接続して次を実行します。
+
+```sh
+cd firmware
+pio run -e paper-mono
+pio run -e paper-mono -t upload
+```
+
+`firmware/assets/default.jpg`はビルド時に検証してバイナリへ埋め込まれます。
+LittleFSの別書き込みは不要です。画像を差し替える場合は386 x 386、8-bit、
+3コンポーネントのBaseline JPEG、256 KiB以下にしてください。不適合なら
+ビルドを停止します。
+
+シリアルログは115200 bpsです。
+
+```sh
+pio device monitor -b 115200
+```
+
+## Android
+
+```sh
+cd mobile
+flutter pub get
+flutter analyze
+flutter test
+flutter build apk --debug
+```
+
+Android 7.0（API 24）以上とNFC-A対応端末が必要です。アプリはNFC権限だけを
+宣言し、インターネット権限は宣言しません。
+
+## iPhone
+
+iOS 13以上のNFC対応iPhoneとmacOS/Xcode/CocoaPodsが必要です。
+
+```sh
+cd mobile
+flutter pub get
+flutter build ios --no-codesign
+open ios/Runner.xcworkspace
+```
+
+Xcodeで各開発者のTeamを選択し、NFC Tag Reading capabilityを確認してから
+実機へビルドします。Team IDやProvisioning Profileはリポジトリへ追加しません。
+
+## 最初の動作確認
+
+1. ファームウェアだけを書き込み、埋め込み画像とダッシュボードが出ることを確認する。
+2. BtnBでフロントライトが消え、再度BtnBで復帰することを確認する。
+3. BtnAを約700 ms長押しし、`SYNC CLOCK`で時刻を送る。
+4. `RECEIVE IMAGE`へ入り、アプリから386 x 386画像を送る。
+5. 送信中にスマホを離して再接続し、転送が再開することを確認する。
+6. `RESET IMAGE`で埋め込み画像へ戻り、歩数・履歴・目標・時刻が残ることを確認する。

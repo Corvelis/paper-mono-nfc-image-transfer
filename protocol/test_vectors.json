@@ -1,0 +1,57 @@
+{
+  "protocolVersion": 1,
+  "byteOrder": "little-endian",
+  "crcAIncluded": false,
+  "vectors": [
+    {
+      "name": "crc32_iso_hdlc_check",
+      "inputAscii": "123456789",
+      "crc32Hex": "CBF43926"
+    },
+    {
+      "name": "hello_request",
+      "commandHex": "50 4D 01 01"
+    },
+    {
+      "name": "hello_idle_response",
+      "responseHex": "50 4D 01 81 00 00 00 00 00 00 00 00 00 FF 00 FD 00 F0 00 00 00 04 00 03"
+    },
+    {
+      "name": "begin_dashboard_386",
+      "transferIdHex": "12345678",
+      "imageBytes": 4,
+      "imageCrc32Hex": "7C9CA35A",
+      "commandHex": "50 4D 01 02 78 56 34 12 00 01 01 82 01 82 01 04 00 00 00 5A A3 9C 7C"
+    },
+    {
+      "name": "data_offset_zero_four_bytes",
+      "payloadHex": "DE AD BE EF",
+      "commandHex": "50 4D 01 03 78 56 34 12 00 00 00 00 04 DE AD BE EF"
+    },
+    {
+      "name": "status_transfer_12345678",
+      "commandHex": "50 4D 01 04 78 56 34 12"
+    },
+    {
+      "name": "commit_transfer_12345678",
+      "imageCrc32Hex": "7C9CA35A",
+      "commandHex": "50 4D 01 05 78 56 34 12 5A A3 9C 7C"
+    },
+    {
+      "name": "abort_transfer_12345678",
+      "commandHex": "50 4D 01 06 78 56 34 12"
+    },
+    {
+      "name": "set_time_2024_jst",
+      "unixTimeSeconds": 1704067200,
+      "utcOffsetMinutes": 540,
+      "commandHex": "50 4D 01 07 80 00 92 65 00 00 00 00 1C 02 00"
+    },
+    {
+      "name": "maximum_data_command",
+      "commandBytesExcludingCrcA": 253,
+      "frameBytesIncludingCrcA": 255,
+      "payloadBytes": 240
+    }
+  ]
+}

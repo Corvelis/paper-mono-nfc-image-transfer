@@ -1,0 +1,25 @@
+.DS_Store
+.idea/
+*.iml
+
+# PlatformIO
+firmware/.pio/
+firmware/.vscode/
+
+# Flutter / Dart
+mobile/.dart_tool/
+mobile/.flutter-plugins
+mobile/.flutter-plugins-dependencies
+mobile/build/
+mobile/android/.gradle/
+mobile/android/local.properties
+mobile/ios/Pods/
+mobile/ios/Flutter/Generated.xcconfig
+mobile/ios/Flutter/flutter_export_environment.sh
+
+# Signing and local credentials
+*.jks
+*.keystore
+*.mobileprovision
+*.p12
+key.properties
