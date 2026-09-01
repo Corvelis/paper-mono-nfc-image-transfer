@@ -27,7 +27,6 @@ class NfcTransferBridge {
   }
 
   Future<void> start(PreparedImage image) async {
-    final clock = _currentClockArguments();
     await _methods.invokeMethod<void>('startTransfer', <String, Object>{
       'bytes': image.bytes,
       'mode': image.mode.code,
@@ -35,7 +34,6 @@ class NfcTransferBridge {
       'height': image.mode.height,
       'crc32': image.crc32,
       'transferId': image.transferId,
-      ...clock,
     });
   }
 

@@ -100,10 +100,8 @@ class MainActivity : FlutterActivity(), NfcAdapter.ReaderCallback, EventChannel.
         val height = call.numberArgument("height")?.toInt()
         val crc32 = call.numberArgument("crc32")?.toLong()?.and(0xffffffffL)
         val transferId = call.numberArgument("transferId")?.toLong()?.and(0xffffffffL)
-        val unixTimeSeconds = call.numberArgument("unixTimeSeconds")?.toLong()
-        val utcOffsetMinutes = call.numberArgument("utcOffsetMinutes")?.toInt()
         if (bytes == null || mode == null || width == null || height == null || crc32 == null ||
-            transferId == null || unixTimeSeconds == null || utcOffsetMinutes == null
+            transferId == null
         ) {
             result.error("INVALID_ARGUMENTS", "送信パラメータが不足しています。", null)
             return
@@ -112,13 +110,9 @@ class MainActivity : FlutterActivity(), NfcAdapter.ReaderCallback, EventChannel.
             result.error("INVALID_IMAGE", "画像サイズまたは転送IDが不正です。", null)
             return
         }
-        if (!validClock(unixTimeSeconds, utcOffsetMinutes)) {
-            result.error("INVALID_TIME", "スマートフォンの時刻またはタイムゾーンが不正です。", null)
-            return
-        }
         pendingTransfer = PendingTransfer(
             bytes, mode, width, height, crc32, transferId,
-            unixTimeSeconds, utcOffsetMinutes,
+            unixTimeSeconds = 0, utcOffsetMinutes = 0,
         )
         dataPayloadLimit = PREFERRED_DATA_PAYLOAD_BYTES
         cancelled.set(false)
@@ -266,17 +260,17 @@ class MainActivity : FlutterActivity(), NfcAdapter.ReaderCallback, EventChannel.
         Log.i(TAG, "HELLO response status=${hello.status}")
         requireStatus(hello, setOf(PaperMonoStatus.OK))
         val capabilities = PaperMonoProtocol.parseHello(hello)
-        if (!capabilities.supportsTimeSync) {
-            throw ProtocolException("TIME_SYNC_UNSUPPORTED", "Paper Monoが時刻同期に対応していません。")
-        }
-        emit("clockSyncing", totalBytes = transfer.bytes.size, message = "時刻を同期しています。")
-        val timeResponse = exchange(
-            nfcA,
-            PaperMonoProtocol.setTime(transfer.unixTimeSeconds, transfer.utcOffsetMinutes),
-            PaperMonoCommand.SET_TIME,
-        )
-        requireStatus(timeResponse, setOf(PaperMonoStatus.OK))
         if (transfer.clockOnly) {
+            if (!capabilities.supportsTimeSync) {
+                throw ProtocolException("TIME_SYNC_UNSUPPORTED", "Paper Monoが時刻同期に対応していません。")
+            }
+            emit("clockSyncing", message = "時刻を同期しています。")
+            val timeResponse = exchange(
+                nfcA,
+                PaperMonoProtocol.setTime(transfer.unixTimeSeconds, transfer.utcOffsetMinutes),
+                PaperMonoCommand.SET_TIME,
+            )
+            requireStatus(timeResponse, setOf(PaperMonoStatus.OK))
             finishClockSync()
             return
         }

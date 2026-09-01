@@ -120,8 +120,10 @@ The common header is followed by a four-byte transfer ID.
 
 The valid UTC range is 2023-01-01 through the end of 2099 and the offset range
 is -840 through +840 minutes. The firmware writes UTC to RX8130CE and stores
-the offset separately. The image sender issues SET_TIME after HELLO and before
-BEGIN; the clock-only flow ends after a successful SET_TIME response.
+the offset separately. Clock synchronization is an explicit, independent flow:
+it issues SET_TIME after HELLO and ends after a successful response. Image
+transfer never requires SET_TIME and proceeds from HELLO directly to BEGIN, so
+image-only v1 receivers remain compatible.
 
 ### COMMIT (12 bytes)
 

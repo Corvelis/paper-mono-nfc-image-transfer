@@ -127,9 +127,7 @@ private final class NfcTransferManager: NSObject,
       let width = (arguments["width"] as? NSNumber)?.uint16Value,
       let height = (arguments["height"] as? NSNumber)?.uint16Value,
       let crc32 = (arguments["crc32"] as? NSNumber)?.uint32Value,
-      let transferId = (arguments["transferId"] as? NSNumber)?.uint32Value,
-      let unixTimeSeconds = (arguments["unixTimeSeconds"] as? NSNumber)?.uint64Value,
-      let utcOffsetMinutes = (arguments["utcOffsetMinutes"] as? NSNumber)?.int16Value
+      let transferId = (arguments["transferId"] as? NSNumber)?.uint32Value
     else {
       result(FlutterError(
         code: "INVALID_ARGUMENTS",
@@ -141,8 +139,7 @@ private final class NfcTransferManager: NSObject,
     let bytes = typedBytes.data
     guard !bytes.isEmpty,
           bytes.count <= PaperMonoProtocol.maxImageBytes,
-          transferId != 0,
-          validClock(unixTimeSeconds, utcOffsetMinutes)
+          transferId != 0
     else {
       result(FlutterError(
         code: "INVALID_IMAGE",
@@ -177,8 +174,8 @@ private final class NfcTransferManager: NSObject,
       height: height,
       crc32: crc32,
       transferId: transferId,
-      unixTimeSeconds: unixTimeSeconds,
-      utcOffsetMinutes: utcOffsetMinutes,
+      unixTimeSeconds: 0,
+      utcOffsetMinutes: 0,
       clockOnly: false
     )
     print("[nfc.ios] start transfer id=\(transferId) bytes=\(bytes.count)")
@@ -435,13 +432,17 @@ private final class NfcTransferManager: NSObject,
         let hello = try helloResult.get()
         try self.requireStatus(hello, accepted: [.ok])
         let capabilities = try PaperMonoProtocol.parseHello(hello)
-        guard capabilities.supportsTimeSync else {
-          throw TransferError(
-            code: "TIME_SYNC_UNSUPPORTED",
-            message: "Paper Monoが時刻同期に対応していません。"
-          )
+        if transfer.clockOnly {
+          guard capabilities.supportsTimeSync else {
+            throw TransferError(
+              code: "TIME_SYNC_UNSUPPORTED",
+              message: "Paper Monoが時刻同期に対応していません。"
+            )
+          }
+          self.sendTime(tag: tag, transfer: transfer)
+        } else {
+          self.sendImage(tag: tag, transfer: transfer, capabilities: capabilities)
         }
-        self.sendTime(tag: tag, transfer: transfer, capabilities: capabilities)
       } catch {
         self.failOrRecover(error)
       }
@@ -450,8 +451,7 @@ private final class NfcTransferManager: NSObject,
 
   private func sendTime(
     tag: NFCMiFareTag,
-    transfer: PendingTransfer,
-    capabilities: HelloCapabilities
+    transfer: PendingTransfer
   ) {
     emit(
       phase: "clockSyncing",
@@ -470,36 +470,41 @@ private final class NfcTransferManager: NSObject,
       do {
         let response = try result.get()
         try self.requireStatus(response, accepted: [.ok])
-        if transfer.clockOnly {
-          self.finishClockSync()
-          return
-        }
-        guard capabilities.maxAcceptedRfFrameBytes >= 63,
-              capabilities.maxProtocolCommandBytes >= 61,
-              capabilities.maxDataPayloadBytes >= 48,
-              capabilities.maxImageBytes >= UInt32(transfer.bytes.count),
-              capabilities.supportsBaselineJpeg3Component
-        else {
-          throw TransferError(
-            code: "INCOMPATIBLE_LIMITS",
-            message: "PaperMonoのDATA上限がv1仕様より小さいです。"
-          )
-        }
-        let dataPayloadBytes = min(
-          Int(capabilities.maxDataPayloadBytes),
-          PaperMonoProtocol.maxDataPayloadBytes,
-          self.dataPayloadLimit
-        )
-        print("[nfc.ios] negotiated DATA payload=\(dataPayloadBytes) bytes")
-        self.sendBegin(
-          tag: tag,
-          transfer: transfer,
-          dataPayloadBytes: dataPayloadBytes
-        )
+        self.finishClockSync()
       } catch {
         self.failOrRecover(error)
       }
     }
+  }
+
+  private func sendImage(
+    tag: NFCMiFareTag,
+    transfer: PendingTransfer,
+    capabilities: HelloCapabilities
+  ) {
+    guard capabilities.maxAcceptedRfFrameBytes >= 63,
+          capabilities.maxProtocolCommandBytes >= 61,
+          capabilities.maxDataPayloadBytes >= 48,
+          capabilities.maxImageBytes >= UInt32(transfer.bytes.count),
+          capabilities.supportsBaselineJpeg3Component
+    else {
+      failOrRecover(TransferError(
+        code: "INCOMPATIBLE_LIMITS",
+        message: "PaperMonoのDATA上限がv1仕様より小さいです。"
+      ))
+      return
+    }
+    let dataPayloadBytes = min(
+      Int(capabilities.maxDataPayloadBytes),
+      PaperMonoProtocol.maxDataPayloadBytes,
+      dataPayloadLimit
+    )
+    print("[nfc.ios] negotiated DATA payload=\(dataPayloadBytes) bytes")
+    sendBegin(
+      tag: tag,
+      transfer: transfer,
+      dataPayloadBytes: dataPayloadBytes
+    )
   }
 
   private func sendBegin(
