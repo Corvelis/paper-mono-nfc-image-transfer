@@ -1,22 +1,28 @@
 # Default artwork license
 
-This license applies only to `default.jpg` in this directory.
+This license applies to `default.jpg` in this directory. For the purposes of
+the following license, the term "Software" expressly includes this image.
 
-- Title: Paper Mono default artwork
-- Copyright: © 2026 あいろぐ
-- SPDX-License-Identifier: `CC-BY-4.0`
-- License: [Creative Commons Attribution 4.0 International][cc-by-4.0]
+SPDX-License-Identifier: MIT
 
-You may copy, redistribute, and adapt the image, including for commercial use,
-provided that you give appropriate credit, link to the license, and indicate
-whether changes were made. Credit may be provided in a product manual, an
-application's license screen, release notes, or another reasonable location.
+MIT License
 
-Suggested attribution:
+Copyright (c) 2026 あいろぐ
 
-> Paper Mono default artwork © 2026 あいろぐ, licensed under CC BY 4.0.
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-The license does not imply endorsement of a modified work or product by the
-copyright holder.
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
-[cc-by-4.0]: https://creativecommons.org/licenses/by/4.0/
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

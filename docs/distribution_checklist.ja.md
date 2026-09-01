@@ -7,7 +7,7 @@
 ## GitHubでソースを公開する場合
 
 - ルートの`LICENSE`（プロジェクトコードのMIT）を残す。
-- `firmware/assets/LICENSE.md`（デフォルト画像のCC BY 4.0）を残す。
+- `firmware/assets/LICENSE.md`（デフォルト画像のMIT）を残す。
 - `THIRD_PARTY_NOTICES.md`と依存バージョンのロックファイルを残す。
 - M5Unit-NFCへビルド時パッチを当てている事実を削除しない。
 - デフォルト画像を差し替える場合は、新しい画像の権利者とライセンスも更新する。
@@ -53,10 +53,7 @@ GPL-2.0-or-laterです。esptoolは生成ファームウェアへリンクされ
 
 ## デフォルト画像を含む製品を配布する場合
 
-`firmware/assets/default.jpg`はCC BY 4.0で商用利用できます。画像の上にクレジットを
-重ねる必要はありませんが、説明書、アプリのライセンス画面、製品ページ、または
-リリースノート等の合理的な場所に、次のような表示を入れます。
-
-> Paper Mono default artwork © 2026 あいろぐ, licensed under CC BY 4.0.
-
-画像を加工した場合は、加工したことも明記し、CC BY 4.0のURLを併記します。
+`firmware/assets/default.jpg`もプロジェクトコードと同じMITライセンスで商用利用、
+加工、再配布できます。画像を含む配布物には、`firmware/assets/LICENSE.md`の
+著作権表示とMIT許諾文を残します。画像上へクレジットを重ねたり、加工したことを
+表示したりする追加条件はありません。

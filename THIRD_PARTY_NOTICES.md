@@ -103,5 +103,5 @@ signed APK/AAB/IPA release process because they are resolved per target.
 ## Project artwork
 
 `firmware/assets/default.jpg` is original project artwork licensed under
-CC BY 4.0, including commercial use. Its attribution and exact scope are in
+the MIT License, including commercial use. Its exact scope and copyright are in
 `firmware/assets/LICENSE.md`.
