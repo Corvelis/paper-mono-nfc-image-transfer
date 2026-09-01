@@ -1,39 +1,40 @@
 # Paper Mono NFC Image Transfer
 
-Send an image from Android or iPhone to an M5Stack Paper Mono over NFC, then
-show it in an offline e-paper dashboard with a clock, calendar, step counter,
-configurable daily goal, and 30-day history.
+日本語 | [English](README.en.md)
 
-This is an unofficial, community-maintained project for **M5Stack Paper Mono
-C153**. Paper Mono Lite does not contain the NFC hardware required by this
-project.
+AndroidまたはiPhoneからM5Stack Paper MonoへNFCで画像を送り、時計、
+カレンダー、歩数、変更可能な歩数目標、30日履歴と一緒に電子ペーパーへ
+表示するオフライン対応プロジェクトです。
 
-The Paper Mono-specific code was extracted from
-[`Corvelis/stackchan-pet-fw`](https://github.com/Corvelis/stackchan-pet-fw) so
-this focused product can evolve without adding maintenance burden to the
-shared multi-device firmware.
+対象はNFCを搭載する **M5Stack Paper Mono C153** です。NFCを搭載しない
+Paper Mono Liteには対応しません。本プロジェクトは非公式のコミュニティ実装です。
 
-## What is included
+Paper Mono固有部分を
+[`Corvelis/stackchan-pet-fw`](https://github.com/Corvelis/stackchan-pet-fw)
+から独立させ、共有のマルチデバイスファームウェアへ保守負担を持ち込まずに
+開発できる構成にしています。
 
-- `firmware/`: standalone PlatformIO firmware for Paper Mono C153
-- `mobile/`: one Flutter app with Android `NfcA` and iPhone Core NFC transports
-- `protocol/`: the versioned wire contract and shared test vectors
-- `docs/`: product behavior, architecture, flashing, and test notes
+## リポジトリ構成
 
-No Wi-Fi, Bluetooth, cloud account, analytics, or OTA update is required.
+- `firmware/`: Paper Mono C153専用のPlatformIOファームウェア
+- `mobile/`: Android `NfcA`とiPhone Core NFCに対応する共通Flutterアプリ
+- `protocol/`: バージョン管理されたNFC通信仕様と共通テストベクター
+- `docs/`: 製品仕様、設計、書き込み、配布、試験資料
 
-## Device experience
+Wi-Fi、Bluetooth、クラウドアカウント、解析、OTA更新は使用しません。
 
-The dashboard preserves the existing Paper Mono visual design:
+## デバイスでの操作
 
-- embedded default image or the last committed NFC image
-- large local clock and date
-- seven-day strip and full month calendar
-- today's steps, configurable goal, and segmented goal counter
-- 30 days of on-device step history
-- front-light-off low-power lock that keeps RTC and step counting active
+既存のPaper Monoのデザインを踏襲したダッシュボードへ、次を表示します。
 
-Hold `BtnA` for about 0.7 seconds to open the six-card menu:
+- 埋め込みデフォルト画像または最後に確定したNFC受信画像
+- 大きなローカル時計と日付
+- 7日間ストリップと月間カレンダー
+- 今日の歩数、変更可能な目標、セグメント式の達成カウンター
+- デバイス内に保存する30日分の歩数履歴
+- RTCと歩数計測を継続する、フロントライト消灯の省電力ロック
+
+通常画面で`BtnA`を約0.7秒長押しすると、6項目のメニューを開きます。
 
 ```text
 RECEIVE IMAGE    SYNC CLOCK
@@ -41,34 +42,34 @@ STEP GOAL        STEP HISTORY
 RESET IMAGE      BACK
 ```
 
-Press `BtnB` on the dashboard to enter or leave low-power lock. The power key
-remains reserved for the device power controller.
+通常画面で`BtnB`を押すと省電力ロックへ入り、もう一度押すと復帰します。
+電源キーはデバイスの電源制御用として予約します。
 
-## Image and time transfer
+## 画像転送と時刻同期
 
-Protocol v1 sends images from the phone to Paper Mono. The reverse direction
-contains acknowledgements, progress, and errors—not image downloads.
+Protocol v1ではスマートフォンからPaper Monoへ画像を送ります。Paper Monoから
+スマートフォンへ返すのはACK、進捗、エラーであり、画像のダウンロードは行いません。
 
-- dashboard image: 386 x 386 pixels
-- JPEG: baseline, three components, metadata stripped
-- maximum encoded image: 256 KiB
-- update: alternating LittleFS slots, committed atomically
-- time: phone UTC time and UTC offset are written to the RX8130CE RTC
+- ダッシュボード画像: 386 x 386ピクセル
+- JPEG: Baseline、3コンポーネント、メタデータなし
+- エンコード後の上限: 256 KiB
+- 更新方法: LittleFSのA/Bスロットへ保存し、完了後にアトミックに切り替え
+- 時刻: スマートフォンのUTC時刻とUTCオフセットをRX8130CE RTCへ設定
 
-An interrupted or invalid transfer leaves the previous image intact. `RESET
-IMAGE` deletes both received-image slots and immediately falls back to the
-default image compiled into the firmware.
+転送が中断した場合や画像が不正だった場合は、それまでの正常画像を維持します。
+`RESET IMAGE`はNFC受信画像の両スロットを削除し、ファームウェアへ埋め込んだ
+デフォルト画像へ戻します。
 
-## Build
+## ビルド
 
-Firmware:
+ファームウェア:
 
 ```sh
 cd firmware
 pio run -e paper-mono
 ```
 
-Mobile app:
+スマートフォンアプリ:
 
 ```sh
 cd mobile
@@ -77,28 +78,28 @@ flutter test
 flutter run
 ```
 
-The iPhone target requires a physical NFC-capable iPhone, the NFC Tag Reading
-capability, and a developer team selected locally in Xcode. No signing identity
-is committed to this repository.
+iPhone版の実機ビルドには、NFC対応iPhone、NFC Tag Reading capability、
+およびXcodeで各自設定するDeveloper Teamが必要です。署名情報は
+リポジトリへコミットしません。
 
-## Default image
+## デフォルト画像
 
-Replace `firmware/assets/default.jpg` and build again. The PlatformIO pre-build
-step validates the JPEG and embeds it into the application binary, so a
-separate filesystem upload is not needed for first boot.
+`firmware/assets/default.jpg`を差し替えて再ビルドできます。PlatformIOの
+プリビルド処理がJPEGを検証してアプリケーションバイナリへ埋め込むため、
+初回起動用にLittleFSを別途書き込む必要はありません。
 
-The bundled default artwork is also licensed under the MIT License. See
-[`firmware/assets/LICENSE.md`](firmware/assets/LICENSE.md).
+同梱デフォルト画像もMITライセンスです。詳細は
+[`firmware/assets/LICENSE.md`](firmware/assets/LICENSE.md)を参照してください。
 
-## License
+## ライセンス
 
-Original software and documentation in this repository are available under
-the MIT License, including the bundled default artwork. Dependencies retain
-their own licenses—see [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) and the
-[Japanese distribution checklist](docs/distribution_checklist.ja.md).
+本リポジトリのオリジナルのソフトウェア、ドキュメント、同梱デフォルト画像は
+MITライセンスです。依存ライブラリにはそれぞれのライセンスが適用されます。
+詳細は[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)と
+[商用配布チェックリスト](docs/distribution_checklist.ja.md)を参照してください。
 
-See [the Japanese build guide](docs/building.ja.md),
-[product specification](docs/product_spec.ja.md), and
-[architecture notes](docs/architecture.md) before changing behavior shared by
-the firmware and phone app. Please keep issues and pull requests in this
-standalone repository; see [CONTRIBUTING.md](CONTRIBUTING.md).
+実装や共通挙動を変更する前に、[ビルド・書き込み手順](docs/building.ja.md)、
+[製品仕様](docs/product_spec.ja.md)、[設計資料](docs/architecture.md)を
+確認してください。IssueとPull Requestは元の共有ファームウェアではなく、
+この独立リポジトリで受け付けます。開発方針は
+[`CONTRIBUTING.md`](CONTRIBUTING.md)にまとめています。
