@@ -182,7 +182,11 @@ void AppController::handleAShort() {
 }
 
 void AppController::handleALong() {
-  if (lowPower_ || screen_ == Screen::Nfc) {
+  if (lowPower_) {
+    return;
+  }
+  if (screen_ == Screen::Nfc) {
+    cancelNfc("button-a-hold");
     return;
   }
   if (screen_ == Screen::Dashboard) {
@@ -236,7 +240,6 @@ void AppController::handleBShort() {
       }
       break;
     case Screen::Nfc:
-      cancelNfc("button");
       break;
   }
 }

@@ -663,7 +663,7 @@ void DashboardView::drawNfcWaiting(bool clockOnly) {
   M5.Display.drawString("KEEP PHONE STILL", 240, 474);
   M5.Display.drawString("UNTIL TRANSFER COMPLETES", 240, 520);
   M5.Display.fillRect(0, 710, M5.Display.width(), 90, TFT_BLACK);
-  M5.Display.drawString("B: CANCEL", 240, 755);
+  M5.Display.drawString("HOLD A: BACK", 240, 755);
   M5.Display.setTextDatum(top_left);
 }
 
