@@ -81,7 +81,7 @@ bool DashboardView::drawImage(
                             datum_t::top_left);
 }
 
-void DashboardView::drawTopBar(bool locked) {
+void DashboardView::drawTopBar() {
   const int32_t width = M5.Display.width();
   M5.Display.fillRect(0, 0, width, 42, TFT_WHITE);
   M5.Display.drawFastHLine(0, 41, width, TFT_BLACK);
@@ -93,11 +93,7 @@ void DashboardView::drawTopBar(bool locked) {
 
   char status[24] = {};
   const int battery = constrain(M5.Power.getBatteryLevel(), 0, 100);
-  if (locked) {
-    snprintf(status, sizeof(status), "LOW POWER  %d%%", battery);
-  } else {
-    snprintf(status, sizeof(status), "%d%%", battery);
-  }
+  snprintf(status, sizeof(status), "%d%%", battery);
   M5.Display.setTextDatum(middle_right);
   M5.Display.drawString(status, width - 14, 20);
   M5.Display.setTextDatum(top_left);
@@ -271,7 +267,7 @@ void DashboardView::drawDashboard(
   if (!received) {
     drawImage(nullptr);
   }
-  drawTopBar(locked);
+  drawTopBar();
   M5.Display.fillRect(0, kDeckTop, M5.Display.width(),
                       M5.Display.height() - kDeckTop, TFT_WHITE);
   M5.Display.fillRect(0, kDeckTop, M5.Display.width(), 8, TFT_BLACK);
@@ -291,7 +287,7 @@ void DashboardView::drawDashboard(
 
 void DashboardView::drawValuesPartial(bool locked) {
   DisplayBatch batch(epd_mode_t::epd_fastest);
-  drawTopBar(locked);
+  drawTopBar();
   drawDashboardValues();
   M5.Display.drawFastHLine(18, 744, M5.Display.width() - 36, TFT_BLACK);
   drawStepProgress();

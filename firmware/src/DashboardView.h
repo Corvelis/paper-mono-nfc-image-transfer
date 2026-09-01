@@ -40,7 +40,7 @@ public:
 
 private:
   bool drawImage(const PaperMonoNfcController::StoredImage* storedImage);
-  void drawTopBar(bool locked);
+  void drawTopBar();
   void drawDashboardValues();
   void drawStepProgress();
   void formatSteps(uint32_t steps, char* output, size_t outputSize) const;
