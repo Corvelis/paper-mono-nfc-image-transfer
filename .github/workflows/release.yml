@@ -1,0 +1,106 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]*.[0-9]*.[0-9]*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: version
+        name: Check tag and repository version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          bash scripts/check_version.sh "$version" >/dev/null
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "platformio==6.1.19"
+      - name: Build packaged firmware
+        run: bash scripts/package_firmware.sh "${{ steps.version.outputs.version }}"
+      - name: Test firmware protocol
+        run: |
+          c++ -std=c++17 -Ifirmware/src \
+            firmware/test/papermono_nfc_protocol_test.cpp \
+            -o /tmp/paper_mono_protocol_test
+          /tmp/paper_mono_protocol_test
+          python -m json.tool protocol/test_vectors.json >/dev/null
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.32.4"
+          channel: stable
+          cache: true
+      - run: flutter pub get
+        working-directory: mobile
+      - run: flutter analyze
+        working-directory: mobile
+      - run: flutter test
+        working-directory: mobile
+
+      - name: Decode Android release key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [[ -z "$KEYSTORE_BASE64" || -z "$KEYSTORE_PASSWORD" || \
+                -z "$KEY_ALIAS" || -z "$KEY_PASSWORD" ]]; then
+            echo "Android release signing secrets are incomplete" >&2
+            exit 1
+          fi
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/android-release.jks"
+          chmod 600 "$RUNNER_TEMP/android-release.jks"
+
+      - name: Build signed Android APK and AAB
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/android-release.jks
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: >-
+          bash scripts/package_android.sh
+          "${{ steps.version.outputs.version }}"
+          "${{ github.run_number }}"
+
+      - name: Create notices, manifest, and checksums
+        run: >-
+          bash scripts/finalize_release.sh
+          "${{ steps.version.outputs.version }}"
+          "${{ github.sha }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: paper-mono-nfc-image-transfer-v${{ steps.version.outputs.version }}
+          path: dist/v${{ steps.version.outputs.version }}/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          notes=$(printf '%s\n\n%s\n\n%s\n%s' \
+            "インストール手順（日本語）: https://github.com/$GITHUB_REPOSITORY/blob/$GITHUB_REF_NAME/docs/install_binary.ja.md" \
+            "Installation (English): https://github.com/$GITHUB_REPOSITORY/blob/$GITHUB_REF_NAME/docs/install_binary.en.md" \
+            "初回・完全再インストールは full.bin、保存データを維持する互換更新は app.bin を使用してください。" \
+            "iPhone版は署名済みTestFlight/App Store配布を使用し、未署名IPAは添付しません。")
+          gh release create "$GITHUB_REF_NAME" \
+            "dist/v$VERSION/"* \
+            --verify-tag \
+            --generate-notes \
+            --notes "$notes" \
+            --title "Paper Mono NFC Image Transfer v$VERSION"

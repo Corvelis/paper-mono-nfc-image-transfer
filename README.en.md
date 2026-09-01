@@ -61,6 +61,21 @@ An interrupted or invalid transfer leaves the previous image intact. `RESET
 IMAGE` deletes both received-image slots and immediately falls back to the
 default image compiled into the firmware.
 
+## Installation
+
+[GitHub Releases](https://github.com/Corvelis/paper-mono-nfc-image-transfer/releases/latest)
+provide a Paper Mono `full.bin` flashable at 0x0000 with the default image
+included, a data-preserving `app.bin` update, a signed Android APK, a Google
+Play AAB, and SHA-256 values for each version.
+
+- Paper Mono and Android: [release binary installation](docs/install_binary.en.md)
+- iPhone: an official TestFlight/App Store link will be added when published;
+  until then, build for a physical device with Xcode
+- Maintainers: [signing and GitHub Release procedure (Japanese)](docs/releasing.ja.md)
+
+The Android APK attached to normal CI runs is a debug artifact. Use the signed
+`android.apk` from GitHub Releases for general installation or redistribution.
+
 ## Build
 
 Firmware:

@@ -60,6 +60,19 @@ Protocol v1ではスマートフォンからPaper Monoへ画像を送ります�
 `RESET IMAGE`はNFC受信画像の両スロットを削除し、ファームウェアへ埋め込んだ
 デフォルト画像へ戻します。
 
+## インストール
+
+[GitHub Releases](https://github.com/Corvelis/paper-mono-nfc-image-transfer/releases/latest)
+では、初期画像込みの初回用`full.bin`、保存データを維持する更新用`app.bin`、
+署名済みAndroid APK、Google Play用AAB、SHA-256一覧をバージョン単位で配布します。
+
+- Paper MonoとAndroid: [配布バイナリのインストール手順](docs/install_binary.ja.md)
+- iPhone: TestFlight/App Store公開後は公式リンクを掲載。それまではXcodeで実機ビルド
+- メンテナー: [署名設定とGitHub Release作成](docs/releasing.ja.md)
+
+GitHub Actionsの通常CIにあるAndroid APKはデバッグ用です。一般利用・再配布には
+GitHub Releaseの署名済み`android.apk`を使用してください。
+
 ## ビルド
 
 ファームウェア:

@@ -47,8 +47,8 @@ void AppController::begin() {
   showDashboard(true);
   lastValuesDrawMs_ = millis();
   nextImuSampleMs_ = millis();
-  Serial.printf("[app] ready board=%d display=%dx%d rtc=%d imu=%d\n",
-                static_cast<int>(M5.getBoard()), M5.Display.width(),
+  Serial.printf("[app] ready version=%s board=%d display=%dx%d rtc=%d imu=%d\n",
+                PAPER_MONO_RELEASE_VERSION, static_cast<int>(M5.getBoard()), M5.Display.width(),
                 M5.Display.height(), clock_.valid() ? 1 : 0,
                 imuReady_ ? 1 : 0);
 }

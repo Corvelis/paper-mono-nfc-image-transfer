@@ -1,5 +1,8 @@
 # ビルドと書き込み
 
+この文書はソースから開発ビルドする手順です。GitHub Releaseの単一BINや署名済み
+APKを使う場合は[配布バイナリのインストール](install_binary.ja.md)を参照してください。
+
 ## 対象ハードウェア
 
 本ファームウェアはNFC内蔵のM5Stack Paper Mono C153専用です。Paper Mono

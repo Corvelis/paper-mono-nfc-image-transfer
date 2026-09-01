@@ -23,3 +23,6 @@ mobile/ios/Flutter/flutter_export_environment.sh
 *.mobileprovision
 *.p12
 key.properties
+
+# Generated release artifacts
+dist/
