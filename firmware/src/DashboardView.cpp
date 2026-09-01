@@ -150,18 +150,18 @@ void DashboardView::drawDashboardValues() {
   M5.Display.setTextSize(2);
   M5.Display.setTextColor(TFT_BLACK, TFT_WHITE);
   M5.Display.setTextDatum(middle_left);
-  const int32_t zoneW = strlen(zone) <= 3 ? 50 : 112;
-  M5.Display.fillRoundRect(18, 554, zoneW, 24, 7, TFT_BLACK);
+  const int32_t zoneW = strlen(zone) <= 3 ? 46 : 108;
+  M5.Display.fillRoundRect(18, 549, zoneW, 21, 6, TFT_BLACK);
   M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
   M5.Display.setTextDatum(middle_center);
-  M5.Display.drawString(zone, 18 + zoneW / 2, 566);
+  M5.Display.drawString(zone, 18 + zoneW / 2, 560);
   M5.Display.setTextSize(1);
 
   M5.Display.setTextColor(TFT_BLACK, TFT_WHITE);
   M5.Display.setFont(&fonts::FreeSansBold24pt7b);
   M5.Display.setTextSize(2);
   M5.Display.setTextDatum(middle_center);
-  M5.Display.drawString(timeText, 170, 618);
+  M5.Display.drawString(timeText, 170, 625);
   M5.Display.setTextSize(1);
 
   char stepText[20] = {};
