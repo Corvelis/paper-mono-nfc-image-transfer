@@ -7,8 +7,7 @@
 #include "DefaultImageData.h"
 
 namespace {
-constexpr int32_t kFaceBottom = 488;
-constexpr int32_t kDeckTop = 488;
+constexpr int32_t kDeckTop = 480;
 constexpr int32_t kResetX = 372;
 constexpr int32_t kResetY = 752;
 constexpr int32_t kResetW = 92;
@@ -82,47 +81,29 @@ bool DashboardView::drawImage(
                             datum_t::top_left);
 }
 
-void DashboardView::drawTopBar(bool locked, bool receivedImage) {
+void DashboardView::drawTopBar(bool locked) {
   const int32_t width = M5.Display.width();
   M5.Display.fillRect(0, 0, width, 42, TFT_WHITE);
   M5.Display.drawFastHLine(0, 41, width, TFT_BLACK);
-  M5.Display.setFont(&fonts::Font0);
+  M5.Display.setFont(&fonts::FreeSansBold12pt7b);
   M5.Display.setTextSize(1);
   M5.Display.setTextDatum(middle_left);
   M5.Display.setTextColor(TFT_BLACK, TFT_WHITE);
-  M5.Display.drawString("PAPER MONO / NFC-01", 14, 20);
+  M5.Display.drawString("PAPER MONO", 14, 20);
 
-  char status[36] = {};
+  char status[24] = {};
   const int battery = constrain(M5.Power.getBatteryLevel(), 0, 100);
-  snprintf(status, sizeof(status), "%s  %d%%",
-           locked ? "LOW POWER" : (receivedImage ? "NFC IMAGE" : "LOCAL"),
-           battery);
+  if (locked) {
+    snprintf(status, sizeof(status), "LOW POWER  %d%%", battery);
+  } else {
+    snprintf(status, sizeof(status), "%d%%", battery);
+  }
   M5.Display.setTextDatum(middle_right);
   M5.Display.drawString(status, width - 14, 20);
   M5.Display.setTextDatum(top_left);
 }
 
-void DashboardView::drawCaption(bool locked, bool receivedImage) {
-  const int32_t width = M5.Display.width();
-  M5.Display.fillRect(0, 446, width, kFaceBottom - 446, TFT_WHITE);
-  M5.Display.drawFastHLine(0, 446, width, TFT_BLACK);
-  M5.Display.setFont(&fonts::Font0);
-  M5.Display.setTextSize(1);
-  M5.Display.setTextColor(TFT_BLACK, TFT_WHITE);
-  M5.Display.setTextDatum(middle_left);
-  M5.Display.drawString(locked ? "LOW POWER / LOCKED"
-                               : (receivedImage ? "NFC IMAGE / DATE + TIME"
-                                                : "DEFAULT IMAGE / DATE + TIME"),
-                        14, 467);
-  M5.Display.setTextDatum(middle_right);
-  M5.Display.drawString(locked ? "STEPS ACTIVE / 03"
-                               : (receivedImage ? "PHONE TRANSFER / 01"
-                                                : "EMBEDDED / 01"),
-                        width - 14, 467);
-  M5.Display.setTextDatum(top_left);
-}
-
-void DashboardView::drawDashboardValues(bool locked) {
+void DashboardView::drawDashboardValues() {
   const int32_t width = M5.Display.width();
   const auto local = clock_.localTime();
   M5.Display.fillRect(0, kValuesTop, width,
@@ -165,15 +146,14 @@ void DashboardView::drawDashboardValues(bool locked) {
   if (local.valid) {
     clock_.formatZone(zone, sizeof(zone));
   }
-  M5.Display.setFont(&fonts::Font0);
+  M5.Display.setFont(&fonts::FreeSansBold12pt7b);
   M5.Display.setTextColor(TFT_BLACK, TFT_WHITE);
   M5.Display.setTextDatum(middle_left);
-  M5.Display.drawString("LOCAL TIME", 18, 565);
-  const int32_t zoneW = locked ? 42 : 54;
-  M5.Display.fillRoundRect(82, 556, zoneW, 18, 9, TFT_BLACK);
+  const int32_t zoneW = strlen(zone) <= 3 ? 62 : 118;
+  M5.Display.fillRoundRect(18, 552, zoneW, 28, 8, TFT_BLACK);
   M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
   M5.Display.setTextDatum(middle_center);
-  M5.Display.drawString(locked ? "LOCK" : zone, 82 + zoneW / 2, 565);
+  M5.Display.drawString(zone, 18 + zoneW / 2, 566);
 
   M5.Display.setTextColor(TFT_BLACK, TFT_WHITE);
   M5.Display.setFont(&fonts::FreeSansBold24pt7b);
@@ -289,13 +269,11 @@ void DashboardView::drawDashboard(
   if (!received) {
     drawImage(nullptr);
   }
-  lastReceivedImage_ = received;
-  drawTopBar(locked, received);
-  drawCaption(locked, received);
+  drawTopBar(locked);
   M5.Display.fillRect(0, kDeckTop, M5.Display.width(),
                       M5.Display.height() - kDeckTop, TFT_WHITE);
   M5.Display.fillRect(0, kDeckTop, M5.Display.width(), 8, TFT_BLACK);
-  drawDashboardValues(locked);
+  drawDashboardValues();
   M5.Display.drawFastHLine(18, 744, M5.Display.width() - 36, TFT_BLACK);
   drawStepProgress();
   if (!locked) {
@@ -311,8 +289,8 @@ void DashboardView::drawDashboard(
 
 void DashboardView::drawValuesPartial(bool locked) {
   DisplayBatch batch(epd_mode_t::epd_fastest);
-  drawTopBar(locked, lastReceivedImage_);
-  drawDashboardValues(locked);
+  drawTopBar(locked);
+  drawDashboardValues();
   M5.Display.drawFastHLine(18, 744, M5.Display.width() - 36, TFT_BLACK);
   drawStepProgress();
   if (!locked) {
@@ -380,9 +358,11 @@ void DashboardView::drawMonthCalendar() {
       M5.Display.drawNumber(day, cx, cy);
     }
   }
-  M5.Display.setTextColor(TFT_BLACK, TFT_WHITE);
+  M5.Display.fillRect(0, 752, width, 48, TFT_BLACK);
+  M5.Display.setFont(&fonts::FreeSansBold12pt7b);
+  M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
   M5.Display.setTextDatum(middle_center);
-  M5.Display.drawString("TAP DATE OR HOLD A TO RETURN", width / 2, 774);
+  M5.Display.drawString("TAP OR HOLD A: BACK", width / 2, 768);
   M5.Display.setTextDatum(top_left);
 }
 
@@ -403,15 +383,14 @@ void DashboardView::drawMenu(MenuItem selected) {
   struct Card {
     const char* index;
     const char* title;
-    const char* detail;
   };
   constexpr Card cards[] = {
-      {"01", "RECEIVE IMAGE", "phone image transfer"},
-      {"02", "SYNC CLOCK", "phone time / RTC"},
-      {"03", "STEP GOAL", "1K - 50K setting"},
-      {"04", "STEP HISTORY", "last 30 days"},
-      {"05", "RESET IMAGE", "restore embedded image"},
-      {"06", "BACK", "return to dashboard"},
+      {"01", "RECEIVE IMAGE"},
+      {"02", "SYNC CLOCK"},
+      {"03", "STEP GOAL"},
+      {"04", "STEP HISTORY"},
+      {"05", "RESET IMAGE"},
+      {"06", "BACK"},
   };
   constexpr int32_t margin = 18;
   constexpr int32_t gap = 12;
@@ -426,9 +405,6 @@ void DashboardView::drawMenu(MenuItem selected) {
   M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
   M5.Display.setTextDatum(middle_left);
   M5.Display.drawString("PAPER MONO MENU", 18, 32);
-  M5.Display.setFont(&fonts::Font0);
-  M5.Display.setTextDatum(middle_right);
-  M5.Display.drawString("A HOLD / TOUCH", width - 18, 32);
   for (size_t index = 0; index < sizeof(cards) / sizeof(cards[0]); ++index) {
     const int32_t column = index % 2;
     const int32_t row = index / 2;
@@ -447,19 +423,19 @@ void DashboardView::drawMenu(MenuItem selected) {
     M5.Display.setTextColor(text, fill);
     M5.Display.drawString(cards[index].index, x + 16, y + 20);
     M5.Display.setFont(&fonts::FreeSansBold12pt7b);
-    M5.Display.setTextDatum(middle_left);
-    M5.Display.drawString(cards[index].title, x + 16, y + 92);
-    M5.Display.setFont(&fonts::Font0);
-    M5.Display.drawString(cards[index].detail, x + 16, y + 126);
-    M5.Display.drawFastHLine(x + 16, y + 150, cardW - 32, text);
-    M5.Display.drawString(isSelected ? "SELECTED" : "TAP TO OPEN",
-                          x + 16, y + 174);
+    M5.Display.setTextDatum(middle_center);
+    M5.Display.drawString(cards[index].title, x + cardW / 2, y + 116);
+    if (isSelected) {
+      M5.Display.drawFastHLine(x + 34, y + 148, cardW - 68, TFT_WHITE);
+      M5.Display.drawString("SELECTED", x + cardW / 2, y + 174);
+    }
   }
-  M5.Display.setFont(&fonts::Font0);
-  M5.Display.setTextColor(TFT_BLACK, TFT_WHITE);
+  M5.Display.fillRect(0, 708, width, 92, TFT_BLACK);
+  M5.Display.setFont(&fonts::FreeSansBold12pt7b);
+  M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
   M5.Display.setTextDatum(middle_center);
-  M5.Display.drawString("A: NEXT   B: OPEN   TAP: DIRECT", width / 2, 748);
-  M5.Display.drawString("HOLD A: CLOSE", width / 2, 772);
+  M5.Display.drawString("A: NEXT     B: OPEN", width / 2, 734);
+  M5.Display.drawString("HOLD A: CLOSE", width / 2, 776);
   M5.Display.setTextDatum(top_left);
 }
 
@@ -489,10 +465,11 @@ void DashboardView::drawGoalEditor(uint32_t candidateGoal) {
   M5.Display.fillRoundRect(90, 570, 300, 84, 12, TFT_BLACK);
   M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
   M5.Display.drawString("SAVE", 240, 612);
-  M5.Display.setFont(&fonts::Font0);
-  M5.Display.setTextColor(TFT_BLACK, TFT_WHITE);
-  M5.Display.drawString("A: -1K   B: +1K   HOLD B: SAVE", 240, 742);
-  M5.Display.drawString("HOLD A: CANCEL", 240, 768);
+  M5.Display.fillRect(0, 700, M5.Display.width(), 100, TFT_BLACK);
+  M5.Display.setFont(&fonts::FreeSansBold12pt7b);
+  M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
+  M5.Display.drawString("A: -1K       B: +1K", 240, 730);
+  M5.Display.drawString("HOLD B: SAVE     HOLD A: BACK", 240, 772);
   M5.Display.setTextDatum(top_left);
 }
 
@@ -534,14 +511,12 @@ void DashboardView::drawHistory(uint8_t page) {
   M5.Display.setFont(&fonts::FreeSansBold12pt7b);
   M5.Display.setTextDatum(middle_left);
   M5.Display.drawString("STEP HISTORY", 18, 32);
-  M5.Display.setFont(&fonts::Font0);
+  M5.Display.setFont(&fonts::FreeSansBold12pt7b);
   M5.Display.setTextDatum(middle_right);
   char pageText[16] = {};
   snprintf(pageText, sizeof(pageText), "%u / %u", page + 1, pages);
   M5.Display.drawString(pageText, M5.Display.width() - 18, 32);
 
-  uint64_t total = 0;
-  uint8_t shown = 0;
   for (uint8_t row = 0; row < 7; ++row) {
     const uint8_t index = page * 7 + row;
     const int32_t y = 102 + row * 84;
@@ -571,26 +546,56 @@ void DashboardView::drawHistory(uint8_t page) {
     char percentText[12] = {};
     snprintf(percentText, sizeof(percentText), "%lu%%",
              static_cast<unsigned long>(percent));
-    M5.Display.setFont(&fonts::Font0);
+    M5.Display.setFont(&fonts::FreeSansBold12pt7b);
     M5.Display.drawString(percentText, 462, y + 24);
     constexpr int32_t barX = 264;
     constexpr int32_t barW = 150;
     M5.Display.drawRect(barX, y + 17, barW, 16, TFT_BLACK);
     M5.Display.fillRect(barX, y + 17,
                         min<int32_t>(barW, (barW * percent) / 100), 16, TFT_BLACK);
-    total += record.steps;
-    ++shown;
   }
-  char summary[64] = {};
-  snprintf(summary, sizeof(summary), "TOTAL %llu   AVG %llu",
-           static_cast<unsigned long long>(total),
-           static_cast<unsigned long long>(shown > 0 ? total / shown : 0));
-  M5.Display.setFont(&fonts::Font0);
+
+  uint64_t monthTotal = 0;
+  uint8_t monthDays = 0;
+  int anchorYear = -1;
+  int anchorMonth = -1;
+  if (count > 0) {
+    const uint8_t anchorIndex = min<uint8_t>(page * 7, count - 1);
+    const time_t anchorRaw =
+        static_cast<time_t>(records[anchorIndex]->activityDay) * 86400;
+    tm anchorDate = {};
+    gmtime_r(&anchorRaw, &anchorDate);
+    anchorYear = anchorDate.tm_year;
+    anchorMonth = anchorDate.tm_mon;
+    for (uint8_t index = 0; index < count; ++index) {
+      const time_t raw =
+          static_cast<time_t>(records[index]->activityDay) * 86400;
+      tm date = {};
+      gmtime_r(&raw, &date);
+      if (date.tm_year == anchorYear && date.tm_mon == anchorMonth) {
+        monthTotal += records[index]->steps;
+        ++monthDays;
+      }
+    }
+  }
+  char averageText[20] = "--";
+  if (monthDays > 0) {
+    formatSteps(static_cast<uint32_t>(monthTotal / monthDays), averageText,
+                sizeof(averageText));
+  }
+  static const char* months[] = {"JAN", "FEB", "MAR", "APR", "MAY", "JUN",
+                                 "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"};
+  char summary[48] = {};
+  snprintf(summary, sizeof(summary), "%s AVG  %s STEPS",
+           anchorMonth >= 0 ? months[anchorMonth] : "MONTH", averageText);
+  M5.Display.setFont(&fonts::FreeSansBold12pt7b);
   M5.Display.setTextColor(TFT_BLACK, TFT_WHITE);
   M5.Display.setTextDatum(middle_center);
-  M5.Display.drawString(summary, M5.Display.width() / 2, 716);
-  M5.Display.drawString("A: OLDER   B: NEWER   HOLD A: BACK",
-                        M5.Display.width() / 2, 764);
+  M5.Display.drawString(summary, M5.Display.width() / 2, 706);
+  M5.Display.fillRect(0, 728, M5.Display.width(), 72, TFT_BLACK);
+  M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
+  M5.Display.drawString("A: OLDER     B: NEWER", M5.Display.width() / 2, 750);
+  M5.Display.drawString("HOLD A: BACK", M5.Display.width() / 2, 782);
   M5.Display.setTextDatum(top_left);
 }
 
@@ -604,10 +609,21 @@ void DashboardView::drawResetConfirmation(bool resetSelected) {
   M5.Display.drawString("RESET IMAGE", 18, 32);
   M5.Display.setTextColor(TFT_BLACK, TFT_WHITE);
   M5.Display.setTextDatum(middle_center);
-  M5.Display.drawString("RESTORE THE DEFAULT IMAGE?", 240, 210);
-  M5.Display.setFont(&fonts::Font0);
-  M5.Display.drawString("Received image slots will be deleted.", 240, 270);
-  M5.Display.drawString("Clock, steps, history and goal remain.", 240, 300);
+  M5.Display.drawString("RESTORE THE DEFAULT IMAGE?", 240, 150);
+  M5.Display.setFont(&fonts::FreeSansBold12pt7b);
+  M5.Display.setTextDatum(middle_left);
+  M5.Display.drawString("RECEIVED IMAGE", 44, 250);
+  M5.Display.drawString("CLOCK + STEPS", 44, 315);
+  M5.Display.drawString("HISTORY + GOAL", 44, 380);
+  M5.Display.setTextDatum(middle_center);
+  M5.Display.fillRoundRect(300, 228, 136, 44, 10, TFT_BLACK);
+  M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
+  M5.Display.drawString("DELETE", 368, 250);
+  M5.Display.drawRoundRect(300, 293, 136, 44, 10, TFT_BLACK);
+  M5.Display.setTextColor(TFT_BLACK, TFT_WHITE);
+  M5.Display.drawString("KEEP", 368, 315);
+  M5.Display.drawRoundRect(300, 358, 136, 44, 10, TFT_BLACK);
+  M5.Display.drawString("KEEP", 368, 380);
   const auto button = [&](int32_t x, const char* text, bool selected) {
     const uint16_t fill = selected ? TFT_BLACK : TFT_WHITE;
     const uint16_t color = selected ? TFT_WHITE : TFT_BLACK;
@@ -619,9 +635,11 @@ void DashboardView::drawResetConfirmation(bool resetSelected) {
   };
   button(40, "CANCEL", !resetSelected);
   button(260, "RESET", resetSelected);
-  M5.Display.setFont(&fonts::Font0);
-  M5.Display.setTextColor(TFT_BLACK, TFT_WHITE);
-  M5.Display.drawString("A: CHANGE   B: OK   HOLD A: BACK", 240, 758);
+  M5.Display.fillRect(0, 700, M5.Display.width(), 100, TFT_BLACK);
+  M5.Display.setFont(&fonts::FreeSansBold12pt7b);
+  M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
+  M5.Display.drawString("A: CHANGE     B: OK", 240, 730);
+  M5.Display.drawString("HOLD A: BACK", 240, 772);
   M5.Display.setTextDatum(top_left);
 }
 
@@ -638,16 +656,16 @@ void DashboardView::drawNfcWaiting(bool clockOnly) {
   M5.Display.setFont(&fonts::FreeSansBold24pt7b);
   M5.Display.drawString("NFC READY", 240, 210);
   M5.Display.setFont(&fonts::FreeSansBold12pt7b);
-  M5.Display.drawString("Hold your phone near", 240, 310);
-  M5.Display.drawString("the Paper Mono NFC area", 240, 350);
-  M5.Display.setFont(&fonts::Font0);
-  M5.Display.drawString(clockOnly
-                            ? "Open SYNC CLOCK in the mobile app."
-                            : "Select an image and start NFC transfer.",
-                        240, 430);
-  M5.Display.drawRoundRect(72, 500, 336, 74, 12, TFT_BLACK);
-  M5.Display.drawString("Keep the phone still until STORED", 240, 537);
-  M5.Display.drawString("B: CANCEL", 240, 758);
+  M5.Display.drawString(clockOnly ? "1. OPEN SYNC CLOCK IN APP"
+                                  : "1. SELECT IMAGE IN APP",
+                        240, 320);
+  M5.Display.drawString("2. HOLD PHONE NEAR NFC AREA", 240, 370);
+  M5.Display.fillRoundRect(48, 440, 384, 112, 12, TFT_BLACK);
+  M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
+  M5.Display.drawString("KEEP PHONE STILL", 240, 474);
+  M5.Display.drawString("UNTIL TRANSFER COMPLETES", 240, 520);
+  M5.Display.fillRect(0, 710, M5.Display.width(), 90, TFT_BLACK);
+  M5.Display.drawString("B: CANCEL", 240, 755);
   M5.Display.setTextDatum(top_left);
 }
 
@@ -664,7 +682,7 @@ void DashboardView::drawMessage(const char* title,
   M5.Display.setTextColor(TFT_BLACK, TFT_WHITE);
   M5.Display.setTextDatum(middle_center);
   M5.Display.drawString(message != nullptr ? message : "", 240, 330);
-  M5.Display.setFont(&fonts::Font0);
+  M5.Display.setFont(&fonts::FreeSansBold12pt7b);
   M5.Display.drawString(footer != nullptr ? footer : "", 240, 758);
   M5.Display.setTextDatum(top_left);
 }

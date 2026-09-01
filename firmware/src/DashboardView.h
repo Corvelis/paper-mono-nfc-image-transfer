@@ -40,13 +40,11 @@ public:
 
 private:
   bool drawImage(const PaperMonoNfcController::StoredImage* storedImage);
-  void drawTopBar(bool locked, bool receivedImage);
-  void drawCaption(bool locked, bool receivedImage);
-  void drawDashboardValues(bool locked);
+  void drawTopBar(bool locked);
+  void drawDashboardValues();
   void drawStepProgress();
   void formatSteps(uint32_t steps, char* output, size_t outputSize) const;
 
   RtcClock& clock_;
   StepCounterController& steps_;
-  bool lastReceivedImage_ = false;
 };
