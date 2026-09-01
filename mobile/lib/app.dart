@@ -135,6 +135,17 @@ class _HomeScreenState extends State<HomeScreen> {
         title: const Text('Paper Mono Image Sender'),
         centerTitle: false,
         backgroundColor: Colors.transparent,
+        actions: <Widget>[
+          IconButton(
+            tooltip: 'ライセンス',
+            onPressed: () => showLicensePage(
+              context: context,
+              applicationName: 'Paper Mono Image Sender',
+              applicationLegalese: '© 2026 あいろぐ / Corvelis contributors',
+            ),
+            icon: const Icon(Icons.info_outline),
+          ),
+        ],
       ),
       bottomNavigationBar: transfer == null
           ? null

@@ -56,6 +56,11 @@ dev_dependencies:
 # The following section is specific to Flutter packages.
 flutter:
 
+  # Include repository-level dependency notes in Flutter's generated
+  # NOTICES.Z and LicenseRegistry output.
+  licenses:
+    - ../THIRD_PARTY_NOTICES.md
+
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in
   # the material Icons class.

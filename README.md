@@ -87,6 +87,18 @@ Replace `firmware/assets/default.jpg` and build again. The PlatformIO pre-build
 step validates the JPEG and embeds it into the application binary, so a
 separate filesystem upload is not needed for first boot.
 
+The bundled default artwork is licensed separately under CC BY 4.0. Commercial
+use is allowed, but attribution is required. See
+[`firmware/assets/LICENSE.md`](firmware/assets/LICENSE.md).
+
+## License
+
+Original software and documentation in this repository are available under
+the MIT License. The default artwork is not covered by the MIT License; it is
+available under CC BY 4.0 as described above. Dependencies retain their own
+licenses—see [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) and the
+[Japanese distribution checklist](docs/distribution_checklist.ja.md).
+
 See [the Japanese build guide](docs/building.ja.md),
 [product specification](docs/product_spec.ja.md), and
 [architecture notes](docs/architecture.md) before changing behavior shared by
