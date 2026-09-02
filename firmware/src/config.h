@@ -12,8 +12,11 @@
 #define STEP_COUNTER_DAY_START_HOUR 0
 #define STEP_COUNTER_SAVE_STEP_DELTA 10
 #define STEP_COUNTER_SAVE_INTERVAL_MS 60000
-#define STEP_COUNTER_STEP_SCALE_NUMERATOR 1
-#define STEP_COUNTER_STEP_SCALE_DENOMINATOR 1
+// A full-day carry comparison measured about 1,500 validated gait cycles
+// against 2,800 iPhone steps. Keep the false-positive-resistant detector and
+// calibrate only cycles that have already passed its cadence checks.
+#define STEP_COUNTER_STEP_SCALE_NUMERATOR 18
+#define STEP_COUNTER_STEP_SCALE_DENOMINATOR 10
 #define STEP_COUNTER_WALK_START_CANDIDATES 3
 #define STEP_COUNTER_MIN_STEP_INTERVAL_MS 280
 #define STEP_COUNTER_MAX_STEP_INTERVAL_MS 1500
