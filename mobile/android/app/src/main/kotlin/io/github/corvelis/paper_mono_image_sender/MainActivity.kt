@@ -32,7 +32,9 @@ class MainActivity : FlutterActivity(), NfcAdapter.ReaderCallback, EventChannel.
 
     @Volatile private var pendingTransfer: PendingTransfer? = null
     @Volatile private var eventSink: EventChannel.EventSink? = null
-    private val transferRunning = AtomicBoolean(false)
+    private val tagStateLock = Any()
+    private var transferRunning = false
+    private var queuedTag: Tag? = null
     private val cancelled = AtomicBoolean(false)
     private var nfcAdapter: NfcAdapter? = null
     private var readerModeEnabled = false
@@ -197,15 +199,48 @@ class MainActivity : FlutterActivity(), NfcAdapter.ReaderCallback, EventChannel.
     }
 
     override fun onTagDiscovered(tag: Tag) {
-        val transfer = pendingTransfer ?: return
-        if (!transferRunning.compareAndSet(false, true)) return
+        synchronized(tagStateLock) {
+            if (transferRunning) {
+                // A passive Paper Mono target can briefly leave and re-enter
+                // the RF field while it persists the image. Android then
+                // invalidates the old Tag object before the current callback
+                // finishes. Keep the newly issued Tag so the transfer can
+                // continue without showing a false failure.
+                queuedTag = tag
+                Log.i(TAG, "tag rediscovered while transfer is active; queued replacement")
+                return
+            }
+            transferRunning = true
+        }
+
+        var currentTag = tag
+        while (true) {
+            val retryMessage = processDiscoveredTag(currentTag)
+            val nextTag = synchronized(tagStateLock) {
+                val replacement = if (pendingTransfer != null) queuedTag else null
+                queuedTag = null
+                if (replacement == null) {
+                    if (retryMessage != null) {
+                        pendingTransfer?.let { emitRecoverable(it, retryMessage) }
+                    }
+                    transferRunning = false
+                }
+                replacement
+            }
+            if (nextTag == null) return
+
+            Log.i(TAG, "continuing transfer with rediscovered tag")
+            currentTag = nextTag
+        }
+    }
+
+    private fun processDiscoveredTag(tag: Tag): String? {
+        val transfer = pendingTransfer ?: return null
         Log.i(TAG, "tag discovered tech=${tag.techList.joinToString()} idBytes=${tag.id?.size ?: 0}")
         val nfcA = NfcA.get(tag)
         if (nfcA == null) {
             Log.w(TAG, "discovered tag does not expose NfcA")
-            emit("recoverableError", 0, transfer.bytes.size, 0, "NFC-Aタグではありません。")
-            transferRunning.set(false)
-            return
+            return "NFC-Aタグではありません。"
         }
 
         try {
@@ -222,16 +257,26 @@ class MainActivity : FlutterActivity(), NfcAdapter.ReaderCallback, EventChannel.
             performTransfer(nfcA, transfer)
         } catch (error: TagLostException) {
             Log.w(TAG, "tag lost", error)
-            emitRecoverable(transfer, "接続が切れました。もう一度PaperMonoに当ててください。")
+            return "接続が切れました。もう一度PaperMonoに当ててください。"
         } catch (error: IOException) {
             Log.w(TAG, "NFC I/O error", error)
-            emitRecoverable(transfer, error.message ?: "NFC通信に失敗しました。")
+            return error.message ?: "NFC通信に失敗しました。"
+        } catch (error: SecurityException) {
+            if (error.isOutdatedNfcTag()) {
+                Log.w(TAG, "Android invalidated the active tag; waiting for replacement", error)
+                return "NFCタグを再接続しています。PaperMonoに当てたままにしてください。"
+            }
+            Log.e(TAG, "NFC permission error", error)
+            pendingTransfer = null
+            setTransferKeepsScreenOn(false)
+            emit("failed", 0, transfer.bytes.size, 0, error.message ?: error.toString(), "NFC_PERMISSION_ERROR")
+            runOnUiThread { disableReaderMode() }
         } catch (error: ProtocolException) {
             Log.w(TAG, "protocol error code=${error.code}", error)
             if (error.code == "CANCELLED") {
                 tryAbort(nfcA, transfer)
             } else if (error.code == "TRANSFER_ID_MISMATCH") {
-                emitRecoverable(transfer, "転送応答を再同期します。もう一度PaperMonoへ当ててください。")
+                return "転送応答を再同期します。もう一度PaperMonoへ当ててください。"
             } else {
                 pendingTransfer = null
                 setTransferKeepsScreenOn(false)
@@ -248,9 +293,12 @@ class MainActivity : FlutterActivity(), NfcAdapter.ReaderCallback, EventChannel.
             try {
                 nfcA.close()
             } catch (_: IOException) {
+            } catch (_: SecurityException) {
+                // Android also checks the Tag generation while closing it.
+                // A replacement Tag has already made this handle unusable.
             }
-            transferRunning.set(false)
         }
+        return null
     }
 
     private fun performTransfer(nfcA: NfcA, transfer: PendingTransfer) {
@@ -283,6 +331,12 @@ class MainActivity : FlutterActivity(), NfcAdapter.ReaderCallback, EventChannel.
         ) {
             throw ProtocolException("INCOMPATIBLE_LIMITS", "PaperMonoが画像転送に必要なv1能力を提供していません。")
         }
+        if (transfer.mode == 0x02 && !capabilities.supportsFullscreenImage) {
+            throw ProtocolException(
+                "FULLSCREEN_UNSUPPORTED",
+                "Paper Monoのファームウェアが全画面画像に対応していません。",
+            )
+        }
         val dataPayloadBytes = minOf(
             capabilities.maxDataPayloadBytes,
             PaperMonoProtocol.MAX_DATA_PAYLOAD_BYTES,
@@ -314,6 +368,23 @@ class MainActivity : FlutterActivity(), NfcAdapter.ReaderCallback, EventChannel.
         var offset = begin.nextExpectedOffset.toInt()
         if (offset !in 0..transfer.bytes.size) {
             throw ProtocolException("INVALID_OFFSET", "PaperMonoが不正な再開位置を返しました。")
+        }
+        when (begin.status) {
+            PaperMonoStatus.STORED -> {
+                emit("stored", transfer.bytes.size, transfer.bytes.size, offset)
+                finishTransfer(transfer)
+                return
+            }
+            PaperMonoStatus.DISPLAYING -> {
+                emit("displaying", transfer.bytes.size, transfer.bytes.size, offset)
+                finishTransfer(transfer)
+                return
+            }
+            PaperMonoStatus.COMPLETED -> {
+                finishTransfer(transfer)
+                return
+            }
+            else -> Unit
         }
 
         var stalls = 0
@@ -486,6 +557,8 @@ class MainActivity : FlutterActivity(), NfcAdapter.ReaderCallback, EventChannel.
             }
         } catch (_: IOException) {
             // Cancellation still succeeds locally if the tag has already left.
+        } catch (_: SecurityException) {
+            // Cancellation still succeeds locally if the tag has already left.
         }
     }
 
@@ -493,6 +566,9 @@ class MainActivity : FlutterActivity(), NfcAdapter.ReaderCallback, EventChannel.
         emit("recoverableError", 0, transfer.bytes.size, 0, message, "TAG_LOST")
         emit("waitingForTag", 0, transfer.bytes.size, 0, "PaperMonoへもう一度当てると途中から再開します。")
     }
+
+    private fun SecurityException.isOutdatedNfcTag(): Boolean =
+        message?.contains("out of date", ignoreCase = true) == true
 
     private fun emit(
         phase: String,

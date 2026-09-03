@@ -42,7 +42,7 @@ class ImageSourceService {
       keepExif: false,
     );
     if (normalized == null || normalized.isEmpty) {
-      throw const FormatException('画像を切り抜き用データへ正規化できませんでした。');
+      throw const FormatException('IMAGE_NORMALIZE_FAILED');
     }
     return normalized;
   }

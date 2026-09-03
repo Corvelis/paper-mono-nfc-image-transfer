@@ -17,17 +17,22 @@ class ImageWorkflowController extends ChangeNotifier {
     ImageProcessor? processor,
     PreparedImageStore? store,
     NfcTransferBridge? nfc,
+    Duration successStatusDuration = const Duration(seconds: 2),
   }) : _sourceService = sourceService ?? ImageSourceService(),
        _processor = processor ?? const ImageProcessor(),
        _store = store ?? const PreparedImageStore(),
-       _nfc = nfc ?? const NfcTransferBridge();
+       _nfc = nfc ?? const NfcTransferBridge(),
+       _successStatusDuration = successStatusDuration;
 
   final ImageSourceService _sourceService;
   final ImageProcessor _processor;
   final PreparedImageStore _store;
   final NfcTransferBridge _nfc;
+  final Duration _successStatusDuration;
 
   StreamSubscription<NfcTransferEvent>? _transferSubscription;
+  Timer? _statusDismissTimer;
+  bool _successStatusDismissed = false;
 
   Uint8List? sourceBytes;
   PreparedImage? preparedImage;
@@ -36,6 +41,8 @@ class ImageWorkflowController extends ChangeNotifier {
   bool isBusy = false;
   bool nfcAvailable = true;
   String? errorMessage;
+  String? errorCode;
+  String languageCode = 'ja';
 
   bool get isTransferSessionActive => switch (transferEvent?.phase) {
     NfcTransferPhase.waitingForTag ||
@@ -63,7 +70,7 @@ class ImageWorkflowController extends ChangeNotifier {
         preparedImage = null;
       }
     } on Object catch (error) {
-      errorMessage = _messageFor(error);
+      _captureError(error);
     }
     notifyListeners();
   }
@@ -89,6 +96,10 @@ class ImageWorkflowController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setLanguage(String code) {
+    languageCode = code == 'en' ? 'en' : 'ja';
+  }
+
   Future<void> prepare(Uint8List croppedBytes) async {
     await _guard(() async {
       final image = await _processor.prepare(croppedBytes, mode);
@@ -112,24 +123,27 @@ class ImageWorkflowController extends ChangeNotifier {
       '[nfc.flutter] send tapped id=${image.transferId} bytes=${image.bytes.length}',
     );
     errorMessage = null;
+    errorCode = null;
+    _statusDismissTimer?.cancel();
+    _successStatusDismissed = false;
     transferEvent = NfcTransferEvent(
       phase: NfcTransferPhase.waitingForTag,
       bytesSent: 0,
       totalBytes: image.bytes.length,
       nextExpectedOffset: 0,
-      message: 'NFC送信を開始しています。',
     );
     notifyListeners();
     try {
-      await _nfc.start(image);
+      await _nfc.start(image, languageCode: languageCode);
     } on Object catch (error) {
-      errorMessage = _messageFor(error);
+      _captureError(error);
       transferEvent = NfcTransferEvent(
         phase: NfcTransferPhase.failed,
         bytesSent: 0,
         totalBytes: image.bytes.length,
         nextExpectedOffset: 0,
         message: errorMessage,
+        errorCode: errorCode,
       );
       notifyListeners();
     }
@@ -140,24 +154,27 @@ class ImageWorkflowController extends ChangeNotifier {
       return;
     }
     errorMessage = null;
+    errorCode = null;
+    _statusDismissTimer?.cancel();
+    _successStatusDismissed = false;
     transferEvent = const NfcTransferEvent(
       phase: NfcTransferPhase.waitingForTag,
       bytesSent: 0,
       totalBytes: 0,
       nextExpectedOffset: 0,
-      message: '時刻同期を開始しています。',
     );
     notifyListeners();
     try {
-      await _nfc.syncClock();
+      await _nfc.syncClock(languageCode: languageCode);
     } on Object catch (error) {
-      errorMessage = _messageFor(error);
+      _captureError(error);
       transferEvent = NfcTransferEvent(
         phase: NfcTransferPhase.failed,
         bytesSent: 0,
         totalBytes: 0,
         nextExpectedOffset: 0,
         message: errorMessage,
+        errorCode: errorCode,
       );
       notifyListeners();
     }
@@ -167,52 +184,94 @@ class ImageWorkflowController extends ChangeNotifier {
 
   void clearError() {
     errorMessage = null;
+    errorCode = null;
     notifyListeners();
   }
 
   void clearTransferStatus() {
-    if (isTransferSessionActive) {
+    final phase = transferEvent?.phase;
+    if (isTransferSessionActive && !_isSuccessfulTerminal(phase)) {
       return;
     }
+    _statusDismissTimer?.cancel();
+    if (_isSuccessfulTerminal(phase)) _successStatusDismissed = true;
     transferEvent = null;
     notifyListeners();
   }
 
   void _onTransferEvent(NfcTransferEvent event) {
+    if (_successStatusDismissed &&
+        transferEvent == null &&
+        _isSuccessfulTerminal(event.phase)) {
+      return;
+    }
+    _statusDismissTimer?.cancel();
+    if (event.phase == NfcTransferPhase.idle) {
+      transferEvent = null;
+      notifyListeners();
+      return;
+    }
     transferEvent = event;
     if (event.phase == NfcTransferPhase.stored ||
+        event.phase == NfcTransferPhase.displaying ||
         event.phase == NfcTransferPhase.completed) {
       unawaited(_store.clear());
     }
     if (event.phase == NfcTransferPhase.failed) {
-      errorMessage = event.message ?? 'NFC送信に失敗しました。';
+      errorCode = event.errorCode ?? 'NFC_SEND_FAILED';
+      errorMessage = event.message;
+    }
+    if (_isSuccessfulTerminal(event.phase)) {
+      _statusDismissTimer = Timer(_successStatusDuration, () {
+        if (identical(transferEvent, event)) {
+          _successStatusDismissed = true;
+          transferEvent = null;
+          notifyListeners();
+        }
+      });
     }
     notifyListeners();
   }
 
+  bool _isSuccessfulTerminal(NfcTransferPhase? phase) =>
+      phase == NfcTransferPhase.stored ||
+      phase == NfcTransferPhase.displaying ||
+      phase == NfcTransferPhase.completed ||
+      phase == NfcTransferPhase.clockSynced;
+
   Future<void> _guard(Future<void> Function() operation) async {
     isBusy = true;
     errorMessage = null;
+    errorCode = null;
     notifyListeners();
     try {
       await operation();
     } on Object catch (error) {
-      errorMessage = _messageFor(error);
+      _captureError(error);
     } finally {
       isBusy = false;
       notifyListeners();
     }
   }
 
-  String _messageFor(Object error) {
+  void _captureError(Object error) {
     if (error is PlatformException) {
-      return error.message ?? error.code;
+      errorCode = error.code;
+      errorMessage = error.message;
+      return;
     }
-    return error.toString().replaceFirst('FormatException: ', '');
+    if (error is FormatException) {
+      errorCode = error.message;
+      errorMessage = null;
+      return;
+    }
+    errorCode = 'INTERNAL_ERROR';
+    errorMessage = error.toString();
   }
 
   @override
   void dispose() {
+    _statusDismissTimer?.cancel();
     unawaited(_transferSubscription?.cancel());
     super.dispose();
   }

@@ -15,12 +15,20 @@ The Paper Mono-specific code was extracted from
 this focused product can evolve without adding maintenance burden to the
 shared multi-device firmware.
 
+## Demo video
+
+<a href="docs/media/paper-mono-nfc-demo.mp4"><img src="docs/media/paper-mono-nfc-demo-poster.jpg" alt="NFC image transfer and Image Library demo" width="360"></a>
+
+This silent 46-second demo shows an image being sent from a phone over NFC,
+then a saved image being selected in `IMAGE LIBRARY` and opened full-screen.
+Click the image above to play the video.
+
 ## What is included
 
 - `firmware/`: standalone PlatformIO firmware for Paper Mono C153
-- `mobile/`: one Flutter app with Android `NfcA` and iPhone Core NFC transports
+- `mobile/`: one Japanese/English Flutter app with Android `NfcA` and iPhone Core NFC transports
 - `protocol/`: the versioned wire contract and shared test vectors
-- `docs/`: product behavior, architecture, flashing, distribution, and test notes
+- [`docs/`](docs/README.en.md): operation, product, architecture, flashing, and distribution index
 
 No Wi-Fi, Bluetooth, cloud account, analytics, or OTA update is required.
 
@@ -28,7 +36,7 @@ No Wi-Fi, Bluetooth, cloud account, analytics, or OTA update is required.
 
 The dashboard preserves the existing Paper Mono visual design:
 
-- embedded default image or the last committed NFC image
+- embedded default image plus up to 17 received NFC images
 - large local clock and date
 - seven-day strip and full month calendar
 - today's steps, configurable goal, and segmented goal counter
@@ -40,11 +48,14 @@ Hold `BtnA` for about 0.7 seconds to open the six-card menu:
 ```text
 RECEIVE IMAGE    SYNC CLOCK
 STEP GOAL        STEP HISTORY
-RESET IMAGE      BACK
+RESET IMAGE      IMAGE LIBRARY
 ```
 
 Press `BtnB` on the dashboard to enter or leave low-power lock. The power key
 remains reserved for the device power controller.
+
+See the [operation guide](docs/usage.en.md) for the complete image-transfer,
+clock-sync, Image Library, step-goal, and low-power controls.
 
 ## Image and time transfer
 
@@ -52,14 +63,21 @@ Protocol v1 sends images from the phone to Paper Mono. The reverse direction
 contains acknowledgements, progress, and errors—not image downloads.
 
 - dashboard image: 386 x 386 pixels
+- full-screen image: 480 x 800 pixels with no dashboard overlay
 - JPEG: baseline, three components, metadata stripped
 - maximum encoded image: 256 KiB
-- update: alternating LittleFS slots, committed atomically
+- storage: 17 received images plus the protected embedded default image
+- ordering: newest first; the oldest received image is evicted at the limit
 - time: phone UTC time and UTC offset are written to the RX8130CE RTC
 
-An interrupted or invalid transfer leaves the previous image intact. `RESET
-IMAGE` deletes both received-image slots and immediately falls back to the
-default image compiled into the firmware.
+An interrupted or invalid transfer leaves existing images intact. Image
+transfer and clock sync are independent; sending an image never requires or
+silently performs a clock update. `IMAGE LIBRARY` shows six thumbnails per page
+across at most three pages, selects the
+displayed image, and supports multi-select deletion. `RESET IMAGE` can select
+the default, open deletion mode, or delete all received images. Image names are
+not transferred; library cards use receive-order numbers plus `DASH`/`FULL`.
+The embedded default image cannot be deleted.
 
 ## Installation
 

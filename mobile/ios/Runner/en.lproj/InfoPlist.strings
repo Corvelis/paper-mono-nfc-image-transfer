@@ -1,0 +1,3 @@
+"NFCReaderUsageDescription" = "NFC is used to send images and clock data to Paper Mono.";
+"NSCameraUsageDescription" = "Camera access is used to take photos for Paper Mono.";
+"NSPhotoLibraryUsageDescription" = "Photo library access is used to choose images for Paper Mono.";

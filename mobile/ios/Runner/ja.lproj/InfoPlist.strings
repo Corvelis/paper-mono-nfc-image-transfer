@@ -1,0 +1,3 @@
+"NFCReaderUsageDescription" = "Paper Monoへ画像と時刻を送信するためにNFCを使用します。";
+"NSCameraUsageDescription" = "Paper Monoへ送る写真を撮影するためにカメラを使用します。";
+"NSPhotoLibraryUsageDescription" = "Paper Monoへ送る画像を選択するために写真ライブラリを使用します。";

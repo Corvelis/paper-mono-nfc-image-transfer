@@ -108,6 +108,7 @@ internal object PaperMonoProtocol {
             maxImage,
             capabilities and 0x01 != 0,
             capabilities and 0x02 != 0,
+            capabilities and 0x04 != 0,
         )
     }
 
@@ -158,4 +159,5 @@ internal data class HelloCapabilities(
     val maxImageBytes: Long,
     val supportsBaselineJpeg3Component: Boolean,
     val supportsTimeSync: Boolean,
+    val supportsFullscreenImage: Boolean,
 )

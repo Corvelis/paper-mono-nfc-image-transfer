@@ -39,4 +39,26 @@ void main() {
     expect(prepared.crc32, crc32IsoHdlc(prepared.bytes));
     expect(prepared.transferId, isNonZero);
   });
+
+  test('prepares a verified 480x800 full-screen JPEG', () async {
+    final source = img.Image(width: 60, height: 100, numChannels: 3);
+    for (final pixel in source) {
+      final value = (pixel.x * 3 + pixel.y * 2) & 0xff;
+      source.setPixelRgb(pixel.x, pixel.y, value, value, value);
+    }
+    final prepared = await const ImageProcessor().prepare(
+      Uint8List.fromList(img.encodePng(source)),
+      PaperMonoImageMode.fullScreen,
+    );
+    final info = JpegInspector.inspect(prepared.bytes);
+    expect(info.width, 480);
+    expect(info.height, 800);
+    expect(info.precision, 8);
+    expect(info.components, 3);
+    expect(info.progressive, isFalse);
+    expect(
+      prepared.bytes.length,
+      lessThanOrEqualTo(PaperMonoProtocol.maxImageBytes),
+    );
+  });
 }

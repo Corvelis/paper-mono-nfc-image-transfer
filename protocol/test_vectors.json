@@ -14,7 +14,7 @@
     },
     {
       "name": "hello_idle_response",
-      "responseHex": "50 4D 01 81 00 00 00 00 00 00 00 00 00 FF 00 FD 00 F0 00 00 00 04 00 03"
+      "responseHex": "50 4D 01 81 00 00 00 00 00 00 00 00 00 FF 00 FD 00 F0 00 00 00 04 00 07"
     },
     {
       "name": "begin_dashboard_386",
@@ -22,6 +22,13 @@
       "imageBytes": 4,
       "imageCrc32Hex": "7C9CA35A",
       "commandHex": "50 4D 01 02 78 56 34 12 00 01 01 82 01 82 01 04 00 00 00 5A A3 9C 7C"
+    },
+    {
+      "name": "begin_fullscreen_480x800",
+      "transferIdHex": "12345678",
+      "imageBytes": 4,
+      "imageCrc32Hex": "7C9CA35A",
+      "commandHex": "50 4D 01 02 78 56 34 12 00 02 01 E0 01 20 03 04 00 00 00 5A A3 9C 7C"
     },
     {
       "name": "data_offset_zero_four_bytes",

@@ -26,7 +26,7 @@ class NfcTransferBridge {
     return await _methods.invokeMethod<bool>('isAvailable') ?? false;
   }
 
-  Future<void> start(PreparedImage image) async {
+  Future<void> start(PreparedImage image, {String languageCode = 'ja'}) async {
     await _methods.invokeMethod<void>('startTransfer', <String, Object>{
       'bytes': image.bytes,
       'mode': image.mode.code,
@@ -34,11 +34,15 @@ class NfcTransferBridge {
       'height': image.mode.height,
       'crc32': image.crc32,
       'transferId': image.transferId,
+      'language': languageCode == 'en' ? 'en' : 'ja',
     });
   }
 
-  Future<void> syncClock() =>
-      _methods.invokeMethod<void>('syncClock', _currentClockArguments());
+  Future<void> syncClock({String languageCode = 'ja'}) =>
+      _methods.invokeMethod<void>('syncClock', <String, Object>{
+        ..._currentClockArguments(),
+        'language': languageCode == 'en' ? 'en' : 'ja',
+      });
 
   Future<void> cancel() => _methods.invokeMethod<void>('cancelTransfer');
 

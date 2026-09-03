@@ -23,9 +23,15 @@ namespace {
 
 constexpr char kPreferencesNamespace[] = "paper_nfc";
 constexpr char kPreferencesKey[] = "active";
-constexpr char kSlotPaths[][22] = {"/nfc_image_a.jpg", "/nfc_image_b.jpg"};
+constexpr char kCatalogKeyA[] = "catalog_a";
+constexpr char kCatalogKeyB[] = "catalog_b";
+constexpr char kLegacySlotPaths[][22] = {"/nfc_image_a.jpg", "/nfc_image_b.jpg"};
+constexpr uint8_t kCatalogImageSlots = 18;
+constexpr uint8_t kDefaultImageSlot = 0xFF;
 constexpr uint32_t kPersistSignature = 0x3143464EUL;  // "NFC1" in LE.
 constexpr uint16_t kPersistVersion = 1;
+constexpr uint32_t kCatalogSignature = 0x3243464EUL;  // "NFC2" in LE.
+constexpr uint16_t kCatalogVersion = 2;
 constexpr size_t kWorkChunkBytes = 4096;
 constexpr uint8_t kPaperMonoUid[] = {0x04, 0x50, 0x41, 0x50, 0x45, 0x52, 0x01};
 
@@ -42,17 +48,52 @@ struct PersistedImageRecord {
   uint32_t transferId = 0;
   uint32_t recordCrc32 = 0;
 };
+
+struct CatalogEntry {
+  uint8_t valid = 0;
+  uint8_t slot = 0;
+  uint8_t imageMode = 0;
+  uint8_t reserved = 0;
+  uint16_t width = 0;
+  uint16_t height = 0;
+  uint32_t size = 0;
+  uint32_t imageCrc32 = 0;
+  uint32_t transferId = 0;
+  uint32_t sequence = 0;
+};
+
+struct CatalogRecord {
+  uint32_t signature = kCatalogSignature;
+  uint16_t version = kCatalogVersion;
+  uint8_t activeSlot = kDefaultImageSlot;
+  uint8_t count = 0;
+  uint32_t generation = 0;
+  uint32_t nextSequence = 1;
+  CatalogEntry entries[PaperMonoNfcController::kMaxReceivedImages] = {};
+  uint32_t recordCrc32 = 0;
+};
 #pragma pack(pop)
 
 static_assert(sizeof(PersistedImageRecord) == 28, "Unexpected NFC metadata layout");
+static_assert(sizeof(CatalogEntry) == 24, "Unexpected NFC catalog entry layout");
 
 uint32_t persistedRecordCrc(const PersistedImageRecord& record) {
   return Protocol::crc32(reinterpret_cast<const uint8_t*>(&record),
                          offsetof(PersistedImageRecord, recordCrc32));
 }
 
+uint32_t catalogRecordCrc(const CatalogRecord& record) {
+  return Protocol::crc32(reinterpret_cast<const uint8_t*>(&record),
+                         offsetof(CatalogRecord, recordCrc32));
+}
+
+void slotPath(uint8_t slot, char* output, size_t outputSize) {
+  snprintf(output, outputSize, "/nfc_%02u.jpg", static_cast<unsigned>(slot));
+}
+
 bool isExpectedGeometry(Protocol::ImageMode mode, uint16_t width, uint16_t height) {
-  return mode == Protocol::ImageMode::Dashboard && width == 386 && height == 386;
+  return (mode == Protocol::ImageMode::Dashboard && width == 386 && height == 386) ||
+         (mode == Protocol::ImageMode::Fullscreen && width == 480 && height == 800);
 }
 
 const char* phaseName(Protocol::Phase phase) {
@@ -201,8 +242,9 @@ struct PaperMonoNfcController::Impl {
   uint8_t pendingSlot = 0;
   bool pendingSlotValid = false;
   File pendingFile;
+  CatalogRecord catalog;
+  bool catalogLoaded = false;
   PaperMonoNfcController::StoredImage stored;
-  char storedPath[22] = {};
   uint32_t storedTransferId = 0;
   uint32_t storedAtMs = 0;
   uint32_t displayRequestedAtMs = 0;
@@ -239,7 +281,9 @@ struct PaperMonoNfcController::Impl {
       pendingFile.close();
     }
     if (removeSlot) {
-      LittleFS.remove(kSlotPaths[pendingSlot & 1U]);
+      char path[20] = {};
+      slotPath(pendingSlot, path, sizeof(path));
+      LittleFS.remove(path);
     }
     pendingSlotValid = false;
     releaseBuffer();
@@ -251,6 +295,132 @@ struct PaperMonoNfcController::Impl {
     cancelWork(false);
     transfer = {};
     setResult(Protocol::Phase::Idle, newStatus);
+  }
+
+  bool validCatalogRecord(const CatalogRecord& record) const {
+    if (record.signature != kCatalogSignature || record.version != kCatalogVersion ||
+        record.count > PaperMonoNfcController::kMaxReceivedImages ||
+        record.recordCrc32 != catalogRecordCrc(record)) {
+      return false;
+    }
+    uint8_t count = 0;
+    bool activeFound = record.activeSlot == kDefaultImageSlot;
+    for (const auto& entry : record.entries) {
+      if (!entry.valid) continue;
+      if (entry.slot >= kCatalogImageSlots || entry.size == 0 ||
+          entry.size > Protocol::kMaxImageBytes ||
+          !isExpectedGeometry(static_cast<Protocol::ImageMode>(entry.imageMode),
+                              entry.width, entry.height)) {
+        return false;
+      }
+      ++count;
+      activeFound = activeFound || entry.slot == record.activeSlot;
+    }
+    return count == record.count && activeFound;
+  }
+
+  bool readCatalogRecord(Preferences& preferences,
+                         const char* key,
+                         CatalogRecord& record) const {
+    return preferences.getBytesLength(key) == sizeof(record) &&
+           preferences.getBytes(key, &record, sizeof(record)) == sizeof(record) &&
+           validCatalogRecord(record);
+  }
+
+  bool saveCatalog(const CatalogRecord& requested) {
+    CatalogRecord next = requested;
+    next.signature = kCatalogSignature;
+    next.version = kCatalogVersion;
+    next.generation = catalog.generation + 1;
+    next.recordCrc32 = catalogRecordCrc(next);
+    const char* key = (next.generation & 1U) == 0 ? kCatalogKeyA : kCatalogKeyB;
+    Preferences preferences;
+    if (!preferences.begin(kPreferencesNamespace, false)) {
+      return false;
+    }
+    const size_t written = preferences.putBytes(key, &next, sizeof(next));
+    preferences.end();
+    if (written != sizeof(next)) {
+      return false;
+    }
+    catalog = next;
+    catalogLoaded = true;
+    return true;
+  }
+
+  int catalogEntryForSlot(uint8_t slot) const {
+    for (uint8_t index = 0; index < PaperMonoNfcController::kMaxReceivedImages; ++index) {
+      if (catalog.entries[index].valid && catalog.entries[index].slot == slot) {
+        return index;
+      }
+    }
+    return -1;
+  }
+
+  int catalogEntryAtNewestIndex(uint8_t newestIndex) const {
+    uint8_t order[PaperMonoNfcController::kMaxReceivedImages] = {};
+    uint8_t count = 0;
+    for (uint8_t index = 0; index < PaperMonoNfcController::kMaxReceivedImages; ++index) {
+      if (catalog.entries[index].valid) order[count++] = index;
+    }
+    for (uint8_t left = 0; left < count; ++left) {
+      for (uint8_t right = left + 1; right < count; ++right) {
+        if (catalog.entries[order[right]].sequence >
+            catalog.entries[order[left]].sequence) {
+          std::swap(order[left], order[right]);
+        }
+      }
+    }
+    return newestIndex < count ? order[newestIndex] : -1;
+  }
+
+  void populateStored(const CatalogEntry& entry) {
+    stored.valid = true;
+    stored.mode = static_cast<Protocol::ImageMode>(entry.imageMode);
+    stored.width = entry.width;
+    stored.height = entry.height;
+    stored.size = entry.size;
+    stored.crc32 = entry.imageCrc32;
+    stored.slot = entry.slot;
+    stored.sequence = entry.sequence;
+    slotPath(entry.slot, stored.path, sizeof(stored.path));
+    storedTransferId = entry.transferId;
+  }
+
+  void refreshStoredFromCatalog() {
+    stored = {};
+    storedTransferId = 0;
+    if (catalog.activeSlot == kDefaultImageSlot) return;
+    const int index = catalogEntryForSlot(catalog.activeSlot);
+    if (index >= 0) populateStored(catalog.entries[index]);
+  }
+
+  uint8_t findFreeStorageSlot() const {
+    for (uint8_t slot = 0; slot < kCatalogImageSlots; ++slot) {
+      if (catalogEntryForSlot(slot) < 0 && (!pendingSlotValid || pendingSlot != slot)) {
+        return slot;
+      }
+    }
+    return kDefaultImageSlot;
+  }
+
+  int oldestCatalogEntry() const {
+    int oldest = -1;
+    for (uint8_t index = 0; index < PaperMonoNfcController::kMaxReceivedImages; ++index) {
+      if (!catalog.entries[index].valid) continue;
+      if (oldest < 0 || catalog.entries[index].sequence <
+                            catalog.entries[oldest].sequence) {
+        oldest = index;
+      }
+    }
+    return oldest;
+  }
+
+  int freeCatalogEntry() const {
+    for (uint8_t index = 0; index < PaperMonoNfcController::kMaxReceivedImages; ++index) {
+      if (!catalog.entries[index].valid) return index;
+    }
+    return -1;
   }
 
   bool transferMatches(uint32_t id,
@@ -621,7 +791,7 @@ struct PaperMonoNfcController::Impl {
         Protocol::writeLe16(response + 15, Protocol::kMaxCommandBytes);
         Protocol::writeLe16(response + 17, Protocol::kMaxDataPayloadBytes);
         Protocol::writeLe32(response + 19, Protocol::kMaxImageBytes);
-        response[23] = 0x03;  // Baseline 3-component JPEG + TIME_SET.
+        response[23] = 0x07;  // Baseline JPEG + TIME_SET + full-screen images.
         return 24;
       case Protocol::Command::Begin: return handleBegin(request, length, response);
       case Protocol::Command::Data: return handleData(request, length, response);
@@ -702,33 +872,15 @@ struct PaperMonoNfcController::Impl {
       pendingFile.close();
     }
     if (removeSlot) {
-      LittleFS.remove(kSlotPaths[pendingSlot & 1U]);
+      char path[20] = {};
+      slotPath(pendingSlot, path, sizeof(path));
+      LittleFS.remove(path);
     }
     pendingSlotValid = false;
     releaseBuffer();
     setResult(Protocol::Phase::Error, failure, true);
     Serial.printf("[paper.nfc] transfer failed id=%lu status=%s\n",
                   static_cast<unsigned long>(transfer.id), ::statusName(failure));
-  }
-
-  bool saveMetadata() {
-    PersistedImageRecord record;
-    record.activeSlot = pendingSlot;
-    record.imageMode = static_cast<uint8_t>(transfer.mode);
-    record.width = transfer.width;
-    record.height = transfer.height;
-    record.size = transfer.size;
-    record.imageCrc32 = transfer.crc32;
-    record.transferId = transfer.id;
-    record.recordCrc32 = persistedRecordCrc(record);
-
-    Preferences preferences;
-    if (!preferences.begin(kPreferencesNamespace, false)) {
-      return false;
-    }
-    const size_t written = preferences.putBytes(kPreferencesKey, &record, sizeof(record));
-    preferences.end();
-    return written == sizeof(record);
   }
 
   void updateVerification() {
@@ -749,13 +901,16 @@ struct PaperMonoNfcController::Impl {
       return;
     }
 
-    pendingSlot = stored.valid && stored.path != nullptr &&
-                          strcmp(stored.path, kSlotPaths[0]) == 0
-                    ? 1
-                    : 0;
+    pendingSlot = findFreeStorageSlot();
+    if (pendingSlot == kDefaultImageSlot) {
+      failTransfer(Protocol::Status::StorageError);
+      return;
+    }
     pendingSlotValid = true;
-    LittleFS.remove(kSlotPaths[pendingSlot]);
-    pendingFile = LittleFS.open(kSlotPaths[pendingSlot], "w");
+    char pendingPath[20] = {};
+    slotPath(pendingSlot, pendingPath, sizeof(pendingPath));
+    LittleFS.remove(pendingPath);
+    pendingFile = LittleFS.open(pendingPath, "w");
     if (!pendingFile) {
       failTransfer(Protocol::Status::StorageError);
       return;
@@ -778,25 +933,54 @@ struct PaperMonoNfcController::Impl {
     pendingFile.flush();
     pendingFile.close();
 
-    File check = LittleFS.open(kSlotPaths[pendingSlot], "r");
+    char pendingPath[20] = {};
+    slotPath(pendingSlot, pendingPath, sizeof(pendingPath));
+    File check = LittleFS.open(pendingPath, "r");
     const bool sizeMatches = check && check.size() == transfer.size;
     if (check) {
       check.close();
     }
-    if (!sizeMatches || !saveMetadata()) {
+    if (!sizeMatches) {
       failTransfer(Protocol::Status::StorageError);
       return;
     }
 
-    stored.valid = true;
-    stored.mode = transfer.mode;
-    stored.width = transfer.width;
-    stored.height = transfer.height;
-    stored.size = transfer.size;
-    stored.crc32 = transfer.crc32;
-    strlcpy(storedPath, kSlotPaths[pendingSlot], sizeof(storedPath));
-    stored.path = storedPath;
-    storedTransferId = transfer.id;
+    CatalogRecord next = catalog;
+    int target = freeCatalogEntry();
+    int evicted = -1;
+    if (target < 0) {
+      target = oldestCatalogEntry();
+      evicted = target;
+    }
+    if (target < 0) {
+      failTransfer(Protocol::Status::StorageError);
+      return;
+    }
+    const uint8_t evictedSlot = evicted >= 0 ? next.entries[evicted].slot
+                                             : kDefaultImageSlot;
+    CatalogEntry entry;
+    entry.valid = 1;
+    entry.slot = pendingSlot;
+    entry.imageMode = static_cast<uint8_t>(transfer.mode);
+    entry.width = transfer.width;
+    entry.height = transfer.height;
+    entry.size = transfer.size;
+    entry.imageCrc32 = transfer.crc32;
+    entry.transferId = transfer.id;
+    entry.sequence = next.nextSequence++;
+    next.entries[target] = entry;
+    if (next.count < PaperMonoNfcController::kMaxReceivedImages) ++next.count;
+    next.activeSlot = pendingSlot;
+    if (!saveCatalog(next)) {
+      failTransfer(Protocol::Status::StorageError);
+      return;
+    }
+    if (evictedSlot != kDefaultImageSlot) {
+      char evictedPath[20] = {};
+      slotPath(evictedSlot, evictedPath, sizeof(evictedPath));
+      LittleFS.remove(evictedPath);
+    }
+    populateStored(entry);
     storedAtMs = millis();
     displayRequestedAtMs = 0;
     pendingSlotValid = false;
@@ -809,64 +993,107 @@ struct PaperMonoNfcController::Impl {
 
   void loadStoredImage() {
     Preferences preferences;
-    PersistedImageRecord record;
     if (!preferences.begin(kPreferencesNamespace, true)) {
       return;
     }
-    const size_t read = preferences.getBytes(kPreferencesKey, &record, sizeof(record));
+    CatalogRecord first;
+    CatalogRecord second;
+    const bool firstValid = readCatalogRecord(preferences, kCatalogKeyA, first);
+    const bool secondValid = readCatalogRecord(preferences, kCatalogKeyB, second);
+    PersistedImageRecord legacy;
+    const size_t legacyRead = preferences.getBytes(kPreferencesKey, &legacy, sizeof(legacy));
     preferences.end();
-    if (read != sizeof(record) || record.signature != kPersistSignature ||
-        record.version != kPersistVersion || record.activeSlot > 1 ||
-        record.recordCrc32 != persistedRecordCrc(record)) {
-      return;
-    }
-    const auto mode = static_cast<Protocol::ImageMode>(record.imageMode);
-    if (record.size == 0 || record.size > Protocol::kMaxImageBytes ||
-        !isExpectedGeometry(mode, record.width, record.height)) {
-      return;
-    }
-    File file = LittleFS.open(kSlotPaths[record.activeSlot], "r");
-    if (!file || file.size() != record.size) {
-      if (file) {
-        file.close();
+
+    if (firstValid || secondValid) {
+      catalog = !secondValid || (firstValid && first.generation >= second.generation)
+                  ? first
+                  : second;
+      catalogLoaded = true;
+      CatalogRecord cleaned = catalog;
+      bool changed = false;
+      for (auto& entry : cleaned.entries) {
+        if (!entry.valid) continue;
+        char path[20] = {};
+        slotPath(entry.slot, path, sizeof(path));
+        File file = LittleFS.open(path, "r");
+        const bool validFile = file && file.size() == entry.size;
+        if (file) file.close();
+        if (!validFile) {
+          if (cleaned.activeSlot == entry.slot) cleaned.activeSlot = kDefaultImageSlot;
+          entry = {};
+          if (cleaned.count > 0) --cleaned.count;
+          changed = true;
+        }
       }
+      if (changed) saveCatalog(cleaned);
+      refreshStoredFromCatalog();
       return;
     }
-    file.close();
-    stored.valid = true;
-    stored.mode = mode;
-    stored.width = record.width;
-    stored.height = record.height;
-    stored.size = record.size;
-    stored.crc32 = record.imageCrc32;
-    strlcpy(storedPath, kSlotPaths[record.activeSlot], sizeof(storedPath));
-    stored.path = storedPath;
-    storedTransferId = record.transferId;
+
+    catalog = {};
+    catalogLoaded = true;
+    bool migratedLegacyFile = false;
+    const bool legacyValid = legacyRead == sizeof(legacy) &&
+        legacy.signature == kPersistSignature && legacy.version == kPersistVersion &&
+        legacy.activeSlot <= 1 && legacy.recordCrc32 == persistedRecordCrc(legacy) &&
+        legacy.size > 0 && legacy.size <= Protocol::kMaxImageBytes &&
+        isExpectedGeometry(static_cast<Protocol::ImageMode>(legacy.imageMode),
+                           legacy.width, legacy.height);
+    if (legacyValid) {
+      File file = LittleFS.open(kLegacySlotPaths[legacy.activeSlot], "r");
+      const bool fileValid = file && file.size() == legacy.size;
+      if (file) file.close();
+      if (fileValid) {
+        char migratedPath[20] = {};
+        slotPath(0, migratedPath, sizeof(migratedPath));
+        LittleFS.remove(migratedPath);
+        if (LittleFS.rename(kLegacySlotPaths[legacy.activeSlot], migratedPath)) {
+          migratedLegacyFile = true;
+          CatalogEntry& entry = catalog.entries[0];
+          entry.valid = 1;
+          entry.slot = 0;
+          entry.imageMode = legacy.imageMode;
+          entry.width = legacy.width;
+          entry.height = legacy.height;
+          entry.size = legacy.size;
+          entry.imageCrc32 = legacy.imageCrc32;
+          entry.transferId = legacy.transferId;
+          entry.sequence = 1;
+          catalog.count = 1;
+          catalog.activeSlot = 0;
+          catalog.nextSequence = 2;
+        }
+      }
+    }
+    if (saveCatalog(catalog)) {
+      for (const auto* path : kLegacySlotPaths) LittleFS.remove(path);
+    } else if (migratedLegacyFile) {
+      char migratedPath[20] = {};
+      slotPath(0, migratedPath, sizeof(migratedPath));
+      LittleFS.rename(migratedPath, kLegacySlotPaths[legacy.activeSlot]);
+      catalog = {};
+    }
+    refreshStoredFromCatalog();
   }
 
   bool clearStoredImage() {
-    // Reception must be stopped by the public wrapper before touching the
-    // transfer buffer or files. Remove both alternating slots so CLEAR does
-    // not leave the previous photo recoverable as an orphaned file.
     cancelWork(true);
     bool filesCleared = true;
-    for (const auto* path : kSlotPaths) {
+    for (uint8_t slot = 0; slot < kCatalogImageSlots; ++slot) {
+      char path[20] = {};
+      slotPath(slot, path, sizeof(path));
       if (LittleFS.exists(path) && !LittleFS.remove(path)) {
         filesCleared = false;
         Serial.printf("[paper.nfc] clear file failed path=%s\n", path);
       }
     }
+    for (const auto* path : kLegacySlotPaths) LittleFS.remove(path);
 
-    Preferences preferences;
-    bool metadataCleared = preferences.begin(kPreferencesNamespace, false);
-    if (metadataCleared) {
-      metadataCleared = preferences.clear();
-      preferences.end();
-    }
+    CatalogRecord empty;
+    const bool metadataCleared = saveCatalog(empty);
 
     transfer = {};
     stored = {};
-    storedPath[0] = '\0';
     storedTransferId = 0;
     storedAtMs = 0;
     displayRequestedAtMs = 0;
@@ -875,6 +1102,7 @@ struct PaperMonoNfcController::Impl {
     persistOffset = 0;
     pendingSlot = 0;
     pendingSlotValid = false;
+    refreshStoredFromCatalog();
 
     const bool success = filesCleared && metadataCleared;
     setResult(success ? Protocol::Phase::Idle : Protocol::Phase::Error,
@@ -883,6 +1111,74 @@ struct PaperMonoNfcController::Impl {
     Serial.printf("[paper.nfc] stored image cleared success=%d files=%d metadata=%d\n",
                   success ? 1 : 0, filesCleared ? 1 : 0, metadataCleared ? 1 : 0);
     return success;
+  }
+
+  bool getStoredImageAt(uint8_t newestIndex,
+                        PaperMonoNfcController::StoredImage& image) const {
+    const int index = catalogEntryAtNewestIndex(newestIndex);
+    if (index < 0) {
+      image = {};
+      return false;
+    }
+    const CatalogEntry& entry = catalog.entries[index];
+    image.valid = true;
+    image.mode = static_cast<Protocol::ImageMode>(entry.imageMode);
+    image.width = entry.width;
+    image.height = entry.height;
+    image.size = entry.size;
+    image.crc32 = entry.imageCrc32;
+    image.slot = entry.slot;
+    image.sequence = entry.sequence;
+    slotPath(entry.slot, image.path, sizeof(image.path));
+    return true;
+  }
+
+  bool selectStoredImageAt(uint8_t newestIndex) {
+    const int index = catalogEntryAtNewestIndex(newestIndex);
+    if (index < 0) return false;
+    CatalogRecord next = catalog;
+    next.activeSlot = next.entries[index].slot;
+    if (!saveCatalog(next)) return false;
+    refreshStoredFromCatalog();
+    ++uiRevision;
+    return true;
+  }
+
+  bool selectDefaultImage() {
+    if (catalog.activeSlot == kDefaultImageSlot) return true;
+    CatalogRecord next = catalog;
+    next.activeSlot = kDefaultImageSlot;
+    if (!saveCatalog(next)) return false;
+    refreshStoredFromCatalog();
+    ++uiRevision;
+    return true;
+  }
+
+  bool deleteStoredImages(uint32_t newestIndexMask) {
+    if (newestIndexMask == 0) return true;
+    CatalogRecord next = catalog;
+    uint8_t slotsToRemove[PaperMonoNfcController::kMaxReceivedImages] = {};
+    uint8_t removeCount = 0;
+    for (uint8_t newest = 0; newest < PaperMonoNfcController::kMaxReceivedImages; ++newest) {
+      if ((newestIndexMask & (1UL << newest)) == 0) continue;
+      const int index = catalogEntryAtNewestIndex(newest);
+      if (index < 0 || !next.entries[index].valid) continue;
+      const uint8_t slot = next.entries[index].slot;
+      slotsToRemove[removeCount++] = slot;
+      if (next.activeSlot == slot) next.activeSlot = kDefaultImageSlot;
+      next.entries[index] = {};
+      if (next.count > 0) --next.count;
+    }
+    if (removeCount == 0) return true;
+    if (!saveCatalog(next)) return false;
+    for (uint8_t index = 0; index < removeCount; ++index) {
+      char path[20] = {};
+      slotPath(slotsToRemove[index], path, sizeof(path));
+      LittleFS.remove(path);
+    }
+    refreshStoredFromCatalog();
+    ++uiRevision;
+    return true;
   }
 
   static uint8_t bcc(const uint8_t* data, size_t length, uint8_t initial = 0) {
@@ -1255,6 +1551,38 @@ bool PaperMonoNfcController::getStoredImage(StoredImage& image) const {
   return true;
 }
 
+uint8_t PaperMonoNfcController::storedImageCount() const {
+  return impl_ != nullptr ? impl_->catalog.count : 0;
+}
+
+bool PaperMonoNfcController::getStoredImageAt(uint8_t newestIndex,
+                                              StoredImage& image) const {
+  return impl_ != nullptr && impl_->getStoredImageAt(newestIndex, image);
+}
+
+bool PaperMonoNfcController::selectStoredImageAt(uint8_t newestIndex) {
+  return impl_ != nullptr && impl_->selectStoredImageAt(newestIndex);
+}
+
+bool PaperMonoNfcController::selectDefaultImage() {
+  return impl_ != nullptr && impl_->selectDefaultImage();
+}
+
+bool PaperMonoNfcController::defaultImageSelected() const {
+  return impl_ == nullptr || impl_->catalog.activeSlot == kDefaultImageSlot;
+}
+
+bool PaperMonoNfcController::deleteStoredImageAt(uint8_t newestIndex) {
+  return newestIndex < kMaxReceivedImages &&
+         deleteStoredImages(1UL << newestIndex);
+}
+
+bool PaperMonoNfcController::deleteStoredImages(uint32_t newestIndexMask) {
+  if (impl_ == nullptr) return false;
+  impl_->setActive(false);
+  return impl_->deleteStoredImages(newestIndexMask);
+}
+
 bool PaperMonoNfcController::clearStoredImage() {
   if (impl_ == nullptr) {
     return false;
@@ -1324,6 +1652,16 @@ bool PaperMonoNfcController::getStoredImage(StoredImage& image) const {
   image = {};
   return false;
 }
+uint8_t PaperMonoNfcController::storedImageCount() const { return 0; }
+bool PaperMonoNfcController::getStoredImageAt(uint8_t, StoredImage& image) const {
+  image = {};
+  return false;
+}
+bool PaperMonoNfcController::selectStoredImageAt(uint8_t) { return false; }
+bool PaperMonoNfcController::selectDefaultImage() { return false; }
+bool PaperMonoNfcController::defaultImageSelected() const { return true; }
+bool PaperMonoNfcController::deleteStoredImageAt(uint8_t) { return false; }
+bool PaperMonoNfcController::deleteStoredImages(uint32_t) { return false; }
 bool PaperMonoNfcController::clearStoredImage() { return false; }
 PaperMonoNfcProtocol::Phase PaperMonoNfcController::phase() const {
   return PaperMonoNfcProtocol::Phase::Idle;

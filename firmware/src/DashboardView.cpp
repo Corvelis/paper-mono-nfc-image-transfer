@@ -63,22 +63,60 @@ void DashboardView::formatSteps(uint32_t steps,
 
 bool DashboardView::drawImage(
     const PaperMonoNfcController::StoredImage* storedImage) {
-  constexpr float scale = 480.0f / 386.0f;
-  if (storedImage != nullptr && storedImage->valid && storedImage->path != nullptr) {
+  if (storedImage != nullptr && storedImage->valid && storedImage->path[0] != '\0') {
     File file = LittleFS.open(storedImage->path, "r");
     if (file) {
-      const bool drawn = M5.Display.drawJpg(&file, 0, 0, 480, 480, 0, 0,
-                                            scale, scale, datum_t::top_left);
+      const bool fullscreen = storedImage->mode ==
+                              PaperMonoNfcProtocol::ImageMode::Fullscreen;
+      const float scale = fullscreen ? 1.0f : 480.0f / 386.0f;
+      const bool drawn = M5.Display.drawJpg(
+          &file, 0, 0, 480, fullscreen ? 800 : 480, 0, 0,
+          scale, scale, datum_t::top_left);
       file.close();
       if (drawn) {
         return true;
       }
     }
   }
+  constexpr float scale = 480.0f / 386.0f;
   return M5.Display.drawJpg(kPaperMonoDefaultImage,
                             static_cast<uint32_t>(kPaperMonoDefaultImageSize),
                             0, 0, 480, 480, 0, 0, scale, scale,
                             datum_t::top_left);
+}
+
+void DashboardView::drawThumbnail(
+    const PaperMonoNfcController::StoredImage* storedImage,
+    int32_t x,
+    int32_t y,
+    int32_t width,
+    int32_t height) {
+  const bool isDefault = storedImage == nullptr || !storedImage->valid;
+  const int32_t sourceW = isDefault ? 386 : storedImage->width;
+  const int32_t sourceH = isDefault ? 386 : storedImage->height;
+  const float scale = min(static_cast<float>(width) / sourceW,
+                          static_cast<float>(height) / sourceH);
+  const int32_t drawnW = static_cast<int32_t>(sourceW * scale);
+  const int32_t drawnH = static_cast<int32_t>(sourceH * scale);
+  const int32_t drawX = x + (width - drawnW) / 2;
+  const int32_t drawY = y + (height - drawnH) / 2;
+  M5.Display.fillRect(x, y, width, height,
+                      M5.Display.color565(216, 216, 216));
+  if (!isDefault && storedImage->path[0] != '\0') {
+    File file = LittleFS.open(storedImage->path, "r");
+    if (file) {
+      M5.Display.drawJpg(&file, drawX, drawY, drawnW, drawnH, 0, 0,
+                         scale, scale, datum_t::top_left);
+      file.close();
+      M5.Display.drawRect(drawX, drawY, drawnW, drawnH, TFT_BLACK);
+      return;
+    }
+  }
+  M5.Display.drawJpg(kPaperMonoDefaultImage,
+                      static_cast<uint32_t>(kPaperMonoDefaultImageSize),
+                      drawX, drawY, drawnW, drawnH, 0, 0, scale, scale,
+                      datum_t::top_left);
+  M5.Display.drawRect(drawX, drawY, drawnW, drawnH, TFT_BLACK);
 }
 
 void DashboardView::drawTopBar() {
@@ -92,8 +130,14 @@ void DashboardView::drawTopBar() {
   M5.Display.drawString("PAPER MONO", 14, 20);
 
   char status[24] = {};
-  const int battery = constrain(M5.Power.getBatteryLevel(), 0, 100);
-  snprintf(status, sizeof(status), "%d%%", battery);
+  battery_.update(M5.Power.getBatteryVoltage());
+  if (battery_.valid()) {
+    snprintf(status, sizeof(status), "%u%%",
+             static_cast<unsigned>(battery_.percentage()));
+  } else {
+    // A transient PMIC/I2C read error must not be presented as an empty cell.
+    snprintf(status, sizeof(status), "--%%");
+  }
   M5.Display.setTextDatum(middle_right);
   M5.Display.drawString(status, width - 14, 20);
   M5.Display.setTextDatum(top_left);
@@ -262,6 +306,12 @@ void DashboardView::drawDashboard(
     bool quality) {
   DisplayBatch batch(quality ? epd_mode_t::epd_quality : epd_mode_t::epd_fast);
   M5.Display.fillScreen(TFT_WHITE);
+  if (storedImage != nullptr && storedImage->valid &&
+      storedImage->mode == PaperMonoNfcProtocol::ImageMode::Fullscreen) {
+    drawImage(storedImage);
+    M5.Display.setTextDatum(top_left);
+    return;
+  }
   const bool received = storedImage != nullptr && storedImage->valid &&
                         drawImage(storedImage);
   if (!received) {
@@ -285,12 +335,17 @@ void DashboardView::drawDashboard(
   M5.Display.setTextDatum(top_left);
 }
 
-void DashboardView::drawValuesPartial(bool locked) {
-  DisplayBatch batch(epd_mode_t::epd_fastest);
-  drawTopBar();
+void DashboardView::drawValuesPartial(bool locked, bool cleanup) {
+  // Keep partial dashboard refreshes below the image boundary. In particular,
+  // lock/unlock and periodic cleanup must not drive the image through another
+  // EPD waveform, because that can change its apparent grayscale density.
+  DisplayBatch batch(cleanup ? epd_mode_t::epd_fast : epd_mode_t::epd_fastest);
   drawDashboardValues();
   M5.Display.drawFastHLine(18, 744, M5.Display.width() - 36, TFT_BLACK);
   drawStepProgress();
+  M5.Display.fillRect(kResetX - 8, kProgressTop,
+                      M5.Display.width() - (kResetX - 8),
+                      kProgressBottom - kProgressTop + 1, TFT_WHITE);
   if (!locked) {
     M5.Display.fillRoundRect(kResetX, kResetY, kResetW, kResetH, 6, TFT_BLACK);
     M5.Display.setFont(&fonts::Font0);
@@ -388,7 +443,7 @@ void DashboardView::drawMenu(MenuItem selected) {
       {"03", "STEP GOAL"},
       {"04", "STEP HISTORY"},
       {"05", "RESET IMAGE"},
-      {"06", "BACK"},
+      {"06", "IMAGE LIBRARY"},
   };
   constexpr int32_t margin = 18;
   constexpr int32_t gap = 12;
@@ -597,7 +652,7 @@ void DashboardView::drawHistory(uint8_t page) {
   M5.Display.setTextDatum(top_left);
 }
 
-void DashboardView::drawResetConfirmation(bool resetSelected) {
+void DashboardView::drawResetImageMenu(uint8_t selected) {
   DisplayBatch batch(epd_mode_t::epd_fast);
   M5.Display.fillScreen(TFT_WHITE);
   M5.Display.fillRect(0, 0, M5.Display.width(), 64, TFT_BLACK);
@@ -607,37 +662,184 @@ void DashboardView::drawResetConfirmation(bool resetSelected) {
   M5.Display.drawString("RESET IMAGE", 18, 32);
   M5.Display.setTextColor(TFT_BLACK, TFT_WHITE);
   M5.Display.setTextDatum(middle_center);
-  M5.Display.drawString("RESTORE THE DEFAULT IMAGE?", 240, 150);
-  M5.Display.setFont(&fonts::FreeSansBold12pt7b);
-  M5.Display.setTextDatum(middle_left);
-  M5.Display.drawString("RECEIVED IMAGE", 44, 250);
-  M5.Display.drawString("CLOCK + STEPS", 44, 315);
-  M5.Display.drawString("HISTORY + GOAL", 44, 380);
-  M5.Display.setTextDatum(middle_center);
-  M5.Display.fillRoundRect(300, 228, 136, 44, 10, TFT_BLACK);
-  M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
-  M5.Display.drawString("DELETE", 368, 250);
-  M5.Display.drawRoundRect(300, 293, 136, 44, 10, TFT_BLACK);
-  M5.Display.setTextColor(TFT_BLACK, TFT_WHITE);
-  M5.Display.drawString("KEEP", 368, 315);
-  M5.Display.drawRoundRect(300, 358, 136, 44, 10, TFT_BLACK);
-  M5.Display.drawString("KEEP", 368, 380);
-  const auto button = [&](int32_t x, const char* text, bool selected) {
-    const uint16_t fill = selected ? TFT_BLACK : TFT_WHITE;
-    const uint16_t color = selected ? TFT_WHITE : TFT_BLACK;
-    M5.Display.fillRoundRect(x, 430, 180, 90, 12, fill);
-    M5.Display.drawRoundRect(x, 430, 180, 90, 12, TFT_BLACK);
-    M5.Display.setTextColor(color, fill);
+  constexpr const char* actions[] = {
+      "USE DEFAULT", "DELETE SELECTED", "DELETE ALL RECEIVED"};
+  for (uint8_t index = 0; index < 3; ++index) {
+    const int32_t y = 118 + index * 154;
+    const bool active = selected == index;
+    const uint16_t fill = active ? TFT_BLACK : TFT_WHITE;
+    const uint16_t text = active ? TFT_WHITE : TFT_BLACK;
+    M5.Display.fillRoundRect(30, y, 420, 126, 12, fill);
+    M5.Display.drawRoundRect(30, y, 420, 126, 12, TFT_BLACK);
+    M5.Display.setTextColor(text, fill);
     M5.Display.setFont(&fonts::FreeSansBold12pt7b);
-    M5.Display.drawString(text, x + 90, 475);
-  };
-  button(40, "CANCEL", !resetSelected);
-  button(260, "RESET", resetSelected);
+    M5.Display.drawString(actions[index], 240, y + 63);
+  }
   M5.Display.fillRect(0, 700, M5.Display.width(), 100, TFT_BLACK);
   M5.Display.setFont(&fonts::FreeSansBold12pt7b);
   M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
-  M5.Display.drawString("A: CHANGE     B: OK", 240, 730);
+  M5.Display.drawString("A: NEXT     B: OPEN", 240, 730);
   M5.Display.drawString("HOLD A: BACK", 240, 772);
+  M5.Display.setTextDatum(top_left);
+}
+
+void DashboardView::drawDeleteAllConfirmation(bool deleteSelected) {
+  DisplayBatch batch(epd_mode_t::epd_fast);
+  M5.Display.fillScreen(TFT_WHITE);
+  M5.Display.fillRect(0, 0, 480, 64, TFT_BLACK);
+  M5.Display.setFont(&fonts::FreeSansBold12pt7b);
+  M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
+  M5.Display.setTextDatum(middle_left);
+  M5.Display.drawString("DELETE ALL IMAGES", 18, 32);
+  M5.Display.setTextColor(TFT_BLACK, TFT_WHITE);
+  M5.Display.setTextDatum(middle_center);
+  M5.Display.drawString("DELETE EVERY RECEIVED IMAGE?", 240, 210);
+  M5.Display.drawString("THE DEFAULT IMAGE WILL REMAIN.", 240, 270);
+  const auto button = [&](int32_t x, const char* label, bool active) {
+    const uint16_t fill = active ? TFT_BLACK : TFT_WHITE;
+    M5.Display.fillRoundRect(x, 390, 190, 96, 12, fill);
+    M5.Display.drawRoundRect(x, 390, 190, 96, 12, TFT_BLACK);
+    M5.Display.setTextColor(active ? TFT_WHITE : TFT_BLACK, fill);
+    M5.Display.drawString(label, x + 95, 438);
+  };
+  button(30, "CANCEL", !deleteSelected);
+  button(260, "DELETE", deleteSelected);
+  M5.Display.fillRect(0, 700, 480, 100, TFT_BLACK);
+  M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
+  M5.Display.drawString("A: CHANGE     B: OK", 240, 748);
+  M5.Display.setTextDatum(top_left);
+}
+
+void DashboardView::drawImageLibrary(const PaperMonoNfcController& images,
+                                     uint8_t page,
+                                     uint8_t focusedIndex,
+                                     bool deleteMode,
+                                     uint32_t deleteMask) {
+  DisplayBatch batch(epd_mode_t::epd_fast);
+  const uint8_t receivedCount = images.storedImageCount();
+  const uint8_t total = receivedCount + 1;
+  const uint8_t pages = max<uint8_t>(1, static_cast<uint8_t>((total + 5) / 6));
+  page = min<uint8_t>(page, pages - 1);
+  M5.Display.fillScreen(TFT_WHITE);
+  M5.Display.fillRect(0, 0, 480, 64, TFT_BLACK);
+  M5.Display.setFont(&fonts::FreeSansBold12pt7b);
+  M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
+  M5.Display.setTextDatum(middle_left);
+  M5.Display.drawString(deleteMode ? "SELECT TO DELETE" : "IMAGE LIBRARY", 18, 32);
+  if (!deleteMode) {
+    M5.Display.drawRoundRect(270, 13, 92, 38, 6, TFT_WHITE);
+    M5.Display.setFont(&fonts::Font0);
+    M5.Display.setTextDatum(middle_center);
+    M5.Display.drawString("DELETE", 316, 32);
+  }
+  char pageText[12] = {};
+  snprintf(pageText, sizeof(pageText), "%02u/%02u", page + 1, pages);
+  M5.Display.setFont(&fonts::FreeSansBold12pt7b);
+  M5.Display.setTextDatum(middle_right);
+  M5.Display.drawString(pageText, 464, 32);
+
+  constexpr int32_t margin = 18;
+  constexpr int32_t gap = 10;
+  constexpr int32_t cardW = 217;
+  constexpr int32_t cardH = 176;
+  constexpr int32_t top = 76;
+  PaperMonoNfcController::StoredImage activeImage;
+  const bool hasActiveImage = images.getStoredImage(activeImage);
+  for (uint8_t local = 0; local < 6; ++local) {
+    const uint8_t global = page * 6 + local;
+    if (global >= total) continue;
+    const int32_t x = margin + (local % 2) * (cardW + gap);
+    const int32_t y = top + (local / 2) * (cardH + 10);
+    const bool isDefault = global == receivedCount;
+    PaperMonoNfcController::StoredImage image;
+    const bool hasImage = !isDefault && images.getStoredImageAt(global, image);
+    const bool current = isDefault ? images.defaultImageSelected()
+                                   : hasImage && hasActiveImage &&
+                                         activeImage.slot == image.slot;
+    const bool focused = global == focusedIndex;
+    const bool marked = !isDefault && (deleteMask & (1UL << global)) != 0;
+    M5.Display.fillRoundRect(x, y, cardW, cardH, 9, TFT_WHITE);
+    const uint8_t borderWidth = focused ? 5 : 1;
+    for (uint8_t inset = 0; inset < borderWidth; ++inset) {
+      M5.Display.drawRoundRect(x + inset, y + inset,
+                               cardW - inset * 2, cardH - inset * 2,
+                               9 - inset, TFT_BLACK);
+    }
+    drawThumbnail(hasImage ? &image : nullptr, x + 9, y + 9, cardW - 18, 130);
+    M5.Display.setFont(&fonts::FreeSansBold12pt7b);
+    M5.Display.setTextColor(TFT_BLACK, TFT_WHITE);
+    M5.Display.setTextDatum(middle_left);
+    char label[12] = "DEFAULT";
+    if (!isDefault) snprintf(label, sizeof(label), "%02u", global + 1);
+    M5.Display.drawString(label, x + 10, y + 157);
+    M5.Display.setFont(&fonts::Font0);
+    M5.Display.setTextDatum(middle_right);
+    M5.Display.drawString(isDefault || image.mode == PaperMonoNfcProtocol::ImageMode::Dashboard
+                              ? "DASH"
+                              : "FULL",
+                          x + cardW - 10, y + 157);
+    if (!deleteMode && current) {
+      M5.Display.fillCircle(x + cardW - 18, y + 18, 12, TFT_BLACK);
+      M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
+      M5.Display.setTextDatum(middle_center);
+      M5.Display.drawString("OK", x + cardW - 18, y + 18);
+    } else if (deleteMode) {
+      if (isDefault) {
+        M5.Display.fillRoundRect(x + 10, y + 10, 52, 20, 5, TFT_BLACK);
+        M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
+        M5.Display.setTextDatum(middle_center);
+        M5.Display.drawString("LOCK", x + 36, y + 20);
+      } else {
+        M5.Display.fillCircle(x + cardW - 18, y + 18, 12,
+                             marked ? TFT_BLACK : TFT_WHITE);
+        M5.Display.drawCircle(x + cardW - 18, y + 18, 12, TFT_BLACK);
+        if (marked) {
+          M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
+          M5.Display.setTextDatum(middle_center);
+          M5.Display.drawString("OK", x + cardW - 18, y + 18);
+        }
+      }
+    }
+    if (global == 0 && !isDefault) {
+      M5.Display.fillRoundRect(x + 10, y + 10, 42, 20, 5, TFT_BLACK);
+      M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
+      M5.Display.setTextDatum(middle_center);
+      M5.Display.drawString("NEW", x + 31, y + 20);
+    }
+  }
+
+  M5.Display.fillRect(0, 648, 480, 152, TFT_BLACK);
+  M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
+  M5.Display.setTextDatum(middle_center);
+  if (deleteMode) {
+    uint8_t selectedCount = 0;
+    for (uint8_t index = 0; index < 17; ++index) {
+      if (deleteMask & (1UL << index)) ++selectedCount;
+    }
+    M5.Display.drawRoundRect(18, 666, 142, 50, 7, TFT_WHITE);
+    M5.Display.drawString("CANCEL", 89, 691);
+    M5.Display.fillRoundRect(320, 666, 142, 50, 7, TFT_WHITE);
+    M5.Display.setTextColor(TFT_BLACK, TFT_WHITE);
+    char deleteText[16] = {};
+    snprintf(deleteText, sizeof(deleteText), "DELETE %u", selectedCount);
+    M5.Display.drawString(deleteText, 391, 691);
+  } else {
+    M5.Display.drawRoundRect(18, 666, 70, 46, 7, TFT_WHITE);
+    M5.Display.drawRoundRect(392, 666, 70, 46, 7, TFT_WHITE);
+    M5.Display.drawString("<", 53, 689);
+    M5.Display.drawString(">", 427, 689);
+    for (uint8_t dot = 0; dot < pages; ++dot) {
+      const int32_t x = 240 + (static_cast<int32_t>(dot) - (pages - 1) / 2.0f) * 24;
+      if (dot == page) M5.Display.fillCircle(x, 689, 6, TFT_WHITE);
+      else M5.Display.drawCircle(x, 689, 6, TFT_WHITE);
+    }
+  }
+  M5.Display.setFont(&fonts::FreeSansBold12pt7b);
+  M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
+  M5.Display.drawString(deleteMode ? "A: NEXT    B: MARK"
+                                   : "A: NEXT    B: OPEN",
+                        240, 748);
+  M5.Display.drawString("HOLD A: BACK    HOLD B: DELETE", 240, 782);
   M5.Display.setTextDatum(top_left);
 }
 
@@ -696,4 +898,36 @@ bool DashboardView::stepsHit(int32_t x, int32_t y) const {
 bool DashboardView::resetHit(int32_t x, int32_t y) const {
   return x >= kResetX - 8 && x < kResetX + kResetW + 8 &&
          y >= kResetY - 8 && y < kResetY + kResetH + 8;
+}
+
+int8_t DashboardView::imageLibraryCardAt(int32_t x, int32_t y) const {
+  if (x < 18 || x >= 462 || y < 76 || y >= 634) return -1;
+  constexpr int32_t cardW = 217;
+  constexpr int32_t cardH = 176;
+  constexpr int32_t gapX = 10;
+  constexpr int32_t gapY = 10;
+  const int32_t column = (x - 18) / (cardW + gapX);
+  const int32_t row = (y - 76) / (cardH + gapY);
+  if (column > 1 || row > 2) return -1;
+  const int32_t localX = (x - 18) % (cardW + gapX);
+  const int32_t localY = (y - 76) % (cardH + gapY);
+  return localX < cardW && localY < cardH ? row * 2 + column : -1;
+}
+
+bool DashboardView::imageLibraryDeleteHit(int32_t x, int32_t y) const {
+  return x >= 260 && x < 372 && y >= 4 && y < 60;
+}
+
+int8_t DashboardView::imageLibraryPageDirectionAt(int32_t x, int32_t y) const {
+  if (y < 648 || y >= 730) return 0;
+  if (x < 110) return -1;
+  if (x >= 370) return 1;
+  return 0;
+}
+
+int8_t DashboardView::resetImageActionAt(int32_t x, int32_t y) const {
+  if (x < 30 || x >= 450 || y < 118 || y >= 552) return -1;
+  const int32_t row = (y - 118) / 154;
+  const int32_t localY = (y - 118) % 154;
+  return row < 3 && localY < 126 ? row : -1;
 }

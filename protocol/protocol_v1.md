@@ -69,7 +69,7 @@ capability bytes to the common response envelope:
 | 2 | 2 | Maximum protocol command bytes (`253`) |
 | 4 | 2 | Maximum DATA payload bytes (`240`) |
 | 6 | 4 | Maximum image bytes (`262144`) |
-| 10 | 1 | Capabilities; bit 0 is Baseline 3-component JPEG, bit 1 is SET_TIME |
+| 10 | 1 | Capabilities; bit 0 is Baseline 3-component JPEG, bit 1 is SET_TIME, bit 2 is full-screen image mode |
 
 ### BEGIN (23 bytes)
 
@@ -78,14 +78,16 @@ capability bytes to the common response envelope:
 | 0 | 4 | Common header |
 | 4 | 4 | Transfer ID |
 | 8 | 1 | Flags; bit 0 is `REPLACE` |
-| 9 | 1 | Mode: `01` dashboard |
+| 9 | 1 | Mode: `01` dashboard, `02` full-screen |
 | 10 | 1 | Format: `01` Baseline 3-component JPEG |
 | 11 | 2 | Width |
 | 13 | 2 | Height |
 | 15 | 4 | Total JPEG bytes |
 | 19 | 4 | JPEG CRC-32 |
 
-Dashboard images are exactly 386×386.
+Dashboard images are exactly 386×386. Full-screen images are exactly 480×800.
+BEGIN intentionally has no filename or display-name field. The device library
+identifies images by receive order and mode only.
 
 Repeating BEGIN with the same ID and identical metadata resumes the transfer.
 A conflicting transfer returns `CONFLICT` or `BUSY`; `BEGIN(REPLACE)` may
@@ -180,7 +182,7 @@ that the e-paper refresh finished; the sender must not keep RF open waiting for 
 - Exactly three components
 - Gray pixels represented by equal R/G/B values
 - No progressive JPEG, CMYK, EXIF, ICC or comments
-- Dimensions exactly 386×386
+- Dimensions exactly 386×386 for dashboard mode or 480×800 for full-screen mode
 - Maximum 262,144 bytes
 
 The firmware quantizes the decoded JPEG for the monochrome panel. The sender

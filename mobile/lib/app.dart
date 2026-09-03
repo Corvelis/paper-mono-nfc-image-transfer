@@ -3,13 +3,55 @@ import 'dart:typed_data';
 
 import 'package:crop_your_image/crop_your_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:image_picker/image_picker.dart';
 
+import 'core/image/paper_mono_image_mode.dart';
 import 'features/home/image_workflow_controller.dart';
 import 'features/transfer/nfc_transfer_bridge.dart';
+import 'l10n/app_strings.dart';
+import 'l10n/language_preference_store.dart';
 
-class PaperMonoSenderApp extends StatelessWidget {
+class PaperMonoSenderApp extends StatefulWidget {
   const PaperMonoSenderApp({super.key});
+
+  @override
+  State<PaperMonoSenderApp> createState() => _PaperMonoSenderAppState();
+}
+
+class _PaperMonoSenderAppState extends State<PaperMonoSenderApp> {
+  static const _languageStore = LanguagePreferenceStore();
+  Locale _locale = const Locale('ja');
+  bool _languageSelected = false;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_restoreLanguage());
+  }
+
+  Future<void> _restoreLanguage() async {
+    final locale = await _languageStore.load();
+    if (mounted && !_languageSelected && locale != _locale) {
+      setState(() => _locale = locale);
+    }
+  }
+
+  void _setLocale(Locale locale) {
+    final normalized = Locale(locale.languageCode == 'en' ? 'en' : 'ja');
+    if (normalized == _locale) return;
+    _languageSelected = true;
+    setState(() => _locale = normalized);
+    unawaited(_saveLanguage(normalized));
+  }
+
+  Future<void> _saveLanguage(Locale locale) async {
+    try {
+      await _languageStore.save(locale);
+    } on Object catch (error) {
+      debugPrint('[locale] could not save language: $error');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -20,7 +62,15 @@ class PaperMonoSenderApp extends StatelessWidget {
     );
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Paper Mono Image Sender',
+      onGenerateTitle: (context) => AppStrings.of(context).appTitle,
+      locale: _locale,
+      supportedLocales: AppStrings.supportedLocales,
+      localizationsDelegates: const <LocalizationsDelegate<dynamic>>[
+        AppStrings.delegate,
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
       theme: ThemeData(
         colorScheme: colorScheme,
         scaffoldBackgroundColor: const Color(0xffefede6),
@@ -39,13 +89,20 @@ class PaperMonoSenderApp extends StatelessWidget {
           ),
         ),
       ),
-      home: const HomeScreen(),
+      home: HomeScreen(locale: _locale, onLocaleChanged: _setLocale),
     );
   }
 }
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  const HomeScreen({
+    required this.locale,
+    required this.onLocaleChanged,
+    super.key,
+  });
+
+  final Locale locale;
+  final ValueChanged<Locale> onLocaleChanged;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -65,6 +122,12 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _workflow = ImageWorkflowController()..addListener(_refresh);
     unawaited(_workflow.initialize());
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _workflow.setLanguage(Localizations.localeOf(context).languageCode);
   }
 
   void _refresh() {
@@ -110,9 +173,10 @@ class _HomeScreenState extends State<HomeScreen> {
       case CropSuccess(:final croppedImage):
         unawaited(_workflow.prepare(croppedImage));
       case CropFailure(:final cause):
+        final strings = AppStrings.of(context);
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('クロップに失敗しました: $cause')));
+        ).showSnackBar(SnackBar(content: Text(strings.cropFailed(cause))));
     }
   }
 
@@ -126,18 +190,37 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final strings = AppStrings.of(context);
     final source = _workflow.sourceBytes;
     final prepared = _workflow.preparedImage;
     final transfer = _workflow.transferEvent;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Paper Mono Image Sender'),
+        title: Text(strings.appTitle),
         centerTitle: false,
         backgroundColor: Colors.transparent,
         actions: <Widget>[
+          PopupMenuButton<String>(
+            tooltip: strings.language,
+            icon: const Icon(Icons.language),
+            initialValue: widget.locale.languageCode,
+            onSelected: (code) => widget.onLocaleChanged(Locale(code)),
+            itemBuilder: (context) => <PopupMenuEntry<String>>[
+              CheckedPopupMenuItem<String>(
+                value: 'ja',
+                checked: widget.locale.languageCode == 'ja',
+                child: Text(strings.japanese),
+              ),
+              CheckedPopupMenuItem<String>(
+                value: 'en',
+                checked: widget.locale.languageCode == 'en',
+                child: Text(strings.english),
+              ),
+            ],
+          ),
           IconButton(
-            tooltip: 'ライセンス',
+            tooltip: strings.licenses,
             onPressed: () => showLicensePage(
               context: context,
               applicationName: 'Paper Mono Image Sender',
@@ -164,25 +247,64 @@ class _HomeScreenState extends State<HomeScreen> {
             _IntroCard(nfcAvailable: _workflow.nfcAvailable),
             const SizedBox(height: 16),
             _SectionCard(
-              title: '時計を合わせる',
+              title: strings.clockSection,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  const Text('スマートフォンの現在時刻とタイムゾーンをNFCで送ります。'),
+                  Text(strings.clockDescription),
                   const SizedBox(height: 12),
                   OutlinedButton.icon(
                     onPressed: _workflow.isTransferSessionActive
                         ? null
                         : _workflow.syncClock,
                     icon: const Icon(Icons.schedule),
-                    label: const Text('NFCで時刻を同期'),
+                    label: Text(strings.syncClock),
                   ),
                 ],
               ),
             ),
             const SizedBox(height: 16),
             _SectionCard(
-              title: '1. 画像を選ぶ',
+              title: strings.displayLayout,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  SizedBox(
+                    width: double.infinity,
+                    child: SegmentedButton<PaperMonoImageMode>(
+                      segments: <ButtonSegment<PaperMonoImageMode>>[
+                        ButtonSegment<PaperMonoImageMode>(
+                          value: PaperMonoImageMode.dateTime,
+                          icon: const Icon(Icons.dashboard_outlined),
+                          label: Text(strings.dashboardLayout),
+                        ),
+                        ButtonSegment<PaperMonoImageMode>(
+                          value: PaperMonoImageMode.fullScreen,
+                          icon: const Icon(Icons.fullscreen),
+                          label: Text(strings.fullScreenLayout),
+                        ),
+                      ],
+                      selected: <PaperMonoImageMode>{_workflow.mode},
+                      onSelectionChanged: _workflow.isBusy
+                          ? null
+                          : (Set<PaperMonoImageMode> selected) {
+                              _workflow.setMode(selected.first);
+                            },
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(strings.modeDescription(_workflow.mode)),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${_workflow.mode.width} × ${_workflow.mode.height} px',
+                    style: Theme.of(context).textTheme.labelLarge,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            _SectionCard(
+              title: strings.chooseImage,
               child: Row(
                 children: <Widget>[
                   Expanded(
@@ -191,7 +313,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           ? null
                           : () => _workflow.pick(ImageSource.gallery),
                       icon: const Icon(Icons.photo_library_outlined),
-                      label: const Text('ギャラリー'),
+                      label: Text(strings.gallery),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -201,7 +323,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           ? null
                           : () => _workflow.pick(ImageSource.camera),
                       icon: const Icon(Icons.photo_camera_outlined),
-                      label: const Text('カメラ'),
+                      label: Text(strings.camera),
                     ),
                   ),
                 ],
@@ -210,7 +332,7 @@ class _HomeScreenState extends State<HomeScreen> {
             if (source != null) ...<Widget>[
               const SizedBox(height: 16),
               _SectionCard(
-                title: '2. 切り抜きを調整',
+                title: strings.adjustCrop,
                 child: Column(
                   children: <Widget>[
                     Listener(
@@ -252,7 +374,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           ? null
                           : () => _cropController.crop(),
                       icon: const Icon(Icons.tonality_outlined),
-                      label: const Text('モノクロプレビューを生成'),
+                      label: Text(strings.generatePreview),
                     ),
                   ],
                 ),
@@ -261,7 +383,7 @@ class _HomeScreenState extends State<HomeScreen> {
             if (prepared != null) ...<Widget>[
               const SizedBox(height: 16),
               _SectionCard(
-                title: '3. 送信プレビュー',
+                title: strings.transferPreview,
                 child: Column(
                   children: <Widget>[
                     Center(
@@ -308,7 +430,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           ? null
                           : _workflow.send,
                       icon: const Icon(Icons.nfc),
-                      label: const Text('NFCで送信'),
+                      label: Text(strings.sendOverNfc),
                     ),
                   ],
                 ),
@@ -318,15 +440,21 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(height: 16),
               const LinearProgressIndicator(),
             ],
-            if (_workflow.errorMessage != null) ...<Widget>[
+            if (_workflow.errorCode != null ||
+                _workflow.errorMessage != null) ...<Widget>[
               const SizedBox(height: 16),
               MaterialBanner(
-                content: Text(_workflow.errorMessage!),
+                content: Text(
+                  strings.errorMessage(
+                    _workflow.errorCode,
+                    fallback: _workflow.errorMessage,
+                  ),
+                ),
                 leading: const Icon(Icons.error_outline),
                 actions: <Widget>[
                   TextButton(
                     onPressed: _workflow.clearError,
-                    child: const Text('閉じる'),
+                    child: Text(strings.close),
                   ),
                 ],
               ),
@@ -345,6 +473,7 @@ class _IntroCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final strings = AppStrings.of(context);
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(18),
@@ -363,11 +492,11 @@ class _IntroCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
                   Text(
-                    nfcAvailable ? 'この端末ではNFCを利用できます' : 'この端末ではNFCを利用できません',
+                    strings.nfcAvailability(nfcAvailable),
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                   const SizedBox(height: 4),
-                  const Text('画像を選び、表示範囲を調整してPaper Monoへ送ります。'),
+                  Text(strings.introDescription),
                 ],
               ),
             ),
@@ -415,9 +544,18 @@ class _TransferStatusPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final strings = AppStrings.of(context);
     final terminal =
+        event.phase == NfcTransferPhase.stored ||
+        event.phase == NfcTransferPhase.displaying ||
         event.phase == NfcTransferPhase.completed ||
         event.phase == NfcTransferPhase.failed ||
+        event.phase == NfcTransferPhase.clockSynced ||
+        event.phase == NfcTransferPhase.idle;
+    final successful =
+        event.phase == NfcTransferPhase.stored ||
+        event.phase == NfcTransferPhase.displaying ||
+        event.phase == NfcTransferPhase.completed ||
         event.phase == NfcTransferPhase.clockSynced;
     final progress = event.progress.clamp(0.0, 1.0);
     final percent = (progress * 100).toStringAsFixed(0);
@@ -439,7 +577,7 @@ class _TransferStatusPanel extends StatelessWidget {
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      _phaseLabel(event.phase),
+                      strings.phaseLabel(event.phase),
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                   ),
@@ -455,21 +593,30 @@ class _TransferStatusPanel extends StatelessWidget {
                     ),
                 ],
               ),
-              const SizedBox(height: 10),
-              LinearProgressIndicator(
-                minHeight: 8,
-                borderRadius: BorderRadius.circular(4),
-                value: hasProgress ? progress : null,
-              ),
+              if (!terminal) ...<Widget>[
+                const SizedBox(height: 10),
+                LinearProgressIndicator(
+                  minHeight: 8,
+                  borderRadius: BorderRadius.circular(4),
+                  value: hasProgress ? progress : null,
+                ),
+              ],
               const SizedBox(height: 8),
               Row(
                 children: <Widget>[
                   Expanded(
                     child: Text(
-                      hasProgress
+                      successful
+                          ? strings.phaseLabel(event.phase)
+                          : event.phase == NfcTransferPhase.failed
+                          ? strings.errorMessage(
+                              event.errorCode,
+                              fallback: event.message,
+                            )
+                          : hasProgress
                           ? '${_formatBytes(event.bytesSent)} / '
                                 '${_formatBytes(event.totalBytes)}'
-                          : event.message ?? '',
+                          : strings.phaseLabel(event.phase),
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         fontFeatures: const <FontFeature>[
                           FontFeature.tabularFigures(),
@@ -479,7 +626,9 @@ class _TransferStatusPanel extends StatelessWidget {
                   ),
                   TextButton(
                     onPressed: terminal ? onDismiss : onCancel,
-                    child: Text(terminal ? '閉じる' : '送信を中止'),
+                    child: Text(
+                      terminal ? strings.close : strings.cancelTransfer,
+                    ),
                   ),
                 ],
               ),
@@ -504,20 +653,5 @@ class _TransferStatusPanel extends StatelessWidget {
     NfcTransferPhase.waitingForTag => Icons.nfc,
     NfcTransferPhase.connected || NfcTransferPhase.receiving => Icons.sync,
     NfcTransferPhase.idle => Icons.hourglass_empty,
-  };
-
-  String _phaseLabel(NfcTransferPhase phase) => switch (phase) {
-    NfcTransferPhase.idle => '待機中',
-    NfcTransferPhase.waitingForTag => 'PaperMonoにスマートフォンを当ててください',
-    NfcTransferPhase.connected => 'PaperMonoに接続しました',
-    NfcTransferPhase.clockSyncing => '時刻を同期しています',
-    NfcTransferPhase.clockSynced => '時刻を同期しました',
-    NfcTransferPhase.receiving => '画像を送信しています',
-    NfcTransferPhase.verifying => 'CRCとJPEGを検証しています',
-    NfcTransferPhase.stored => '画像の保存が完了しました',
-    NfcTransferPhase.displaying => 'PaperMonoの画面を更新しています',
-    NfcTransferPhase.completed => '送信と画面更新が完了しました',
-    NfcTransferPhase.recoverableError => '接続が切れました。もう一度当ててください',
-    NfcTransferPhase.failed => '送信に失敗しました',
   };
 }

@@ -35,6 +35,10 @@ jobs:
             firmware/test/papermono_nfc_protocol_test.cpp \
             -o /tmp/paper_mono_protocol_test
           /tmp/paper_mono_protocol_test
+          c++ -std=c++17 -Ifirmware/src \
+            firmware/test/battery_level_estimator_test.cpp \
+            -o /tmp/paper_mono_battery_test
+          /tmp/paper_mono_battery_test
           python -m json.tool protocol/test_vectors.json >/dev/null
 
       - uses: subosito/flutter-action@v2
@@ -93,9 +97,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          notes=$(printf '%s\n\n%s\n\n%s\n%s' \
+          notes=$(printf '%s\n%s\n\n%s\n%s\n\n%s\n%s' \
             "インストール手順（日本語）: https://github.com/$GITHUB_REPOSITORY/blob/$GITHUB_REF_NAME/docs/install_binary.ja.md" \
             "Installation (English): https://github.com/$GITHUB_REPOSITORY/blob/$GITHUB_REF_NAME/docs/install_binary.en.md" \
+            "操作ガイド（日本語）: https://github.com/$GITHUB_REPOSITORY/blob/$GITHUB_REF_NAME/docs/usage.ja.md" \
+            "Operation guide (English): https://github.com/$GITHUB_REPOSITORY/blob/$GITHUB_REF_NAME/docs/usage.en.md" \
             "初回・完全再インストールは full.bin、保存データを維持する互換更新は app.bin を使用してください。" \
             "iPhone版は署名済みTestFlight/App Store配布を使用し、未署名IPAは添付しません。")
           gh release create "$GITHUB_REF_NAME" \

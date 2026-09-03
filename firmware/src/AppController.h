@@ -19,7 +19,9 @@ private:
     Calendar,
     Goal,
     History,
-    ResetConfirm,
+    ResetImage,
+    DeleteAllConfirm,
+    ImageLibrary,
     Nfc,
     Message,
   };
@@ -46,6 +48,12 @@ private:
   void updateTouch();
   void selectMenuItem(MenuItem item);
   void showDashboard(bool quality = false);
+  void showImageLibrary();
+  void activateLibraryItem();
+  void toggleLibraryDeleteItem();
+  uint8_t imageLibraryTotal() const;
+  uint8_t imageLibraryPages() const;
+  bool fullScreenImageActive() const;
   void enterNfc(NfcPurpose purpose);
   void updateNfc(uint32_t now);
   void cancelNfc(const char* reason);
@@ -70,6 +78,14 @@ private:
   ButtonGesture buttonB_;
   bool lowPower_ = false;
   bool resetSelected_ = false;
+  uint8_t resetAction_ = 0;
+  uint8_t libraryPage_ = 0;
+  uint8_t libraryFocus_ = 0;
+  bool libraryDeleteMode_ = false;
+  uint32_t libraryDeleteMask_ = 0;
+  bool libraryTouchTracking_ = false;
+  int16_t libraryTouchStartX_ = 0;
+  int16_t libraryTouchStartY_ = 0;
   bool imuReady_ = false;
   uint32_t candidateGoal_ = PAPER_MONO_DEFAULT_STEP_GOAL;
   uint8_t historyPage_ = 0;

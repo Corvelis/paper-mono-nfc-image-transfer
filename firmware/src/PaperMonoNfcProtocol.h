@@ -82,6 +82,7 @@ enum class Phase : uint8_t {
 
 enum class ImageMode : uint8_t {
   Dashboard = 1,
+  Fullscreen = 2,
 };
 
 enum class ImageFormat : uint8_t {

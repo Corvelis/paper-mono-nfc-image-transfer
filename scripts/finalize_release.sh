@@ -29,19 +29,18 @@ done
 staging_dir="$(mktemp -d)"
 trap 'rm -rf "$staging_dir"' EXIT
 notices_dir="$staging_dir/notices"
-mkdir -p "$notices_dir/firmware-assets" \
-  "$notices_dir/firmware-dependency-licenses" "$notices_dir/docs"
+mkdir -p "$notices_dir/firmware/assets" \
+  "$notices_dir/firmware-dependency-licenses" "$notices_dir/docs" \
+  "$notices_dir/protocol"
 cp "$repo_root/LICENSE" "$notices_dir/LICENSE"
 cp "$repo_root/THIRD_PARTY_NOTICES.md" "$notices_dir/THIRD_PARTY_NOTICES.md"
+cp "$repo_root/CONTRIBUTING.md" "$notices_dir/CONTRIBUTING.md"
 cp "$repo_root/README.md" "$notices_dir/README.md"
 cp "$repo_root/README.en.md" "$notices_dir/README.en.md"
-cp "$repo_root/firmware/assets/LICENSE.md" "$notices_dir/firmware-assets/LICENSE.md"
-cp "$repo_root/docs/install_binary.ja.md" "$notices_dir/docs/install_binary.ja.md"
-cp "$repo_root/docs/install_binary.en.md" "$notices_dir/docs/install_binary.en.md"
-cp "$repo_root/docs/building.ja.md" "$notices_dir/docs/building.ja.md"
-cp "$repo_root/docs/distribution_checklist.ja.md" \
-  "$notices_dir/docs/distribution_checklist.ja.md"
-cp "$repo_root/docs/releasing.ja.md" "$notices_dir/docs/releasing.ja.md"
+cp "$repo_root/firmware/assets/LICENSE.md" "$notices_dir/firmware/assets/LICENSE.md"
+cp "$repo_root"/docs/*.md "$notices_dir/docs/"
+cp "$repo_root/protocol/protocol_v1.md" "$notices_dir/protocol/protocol_v1.md"
+cp "$repo_root/protocol/test_vectors.json" "$notices_dir/protocol/test_vectors.json"
 
 dependency_root="$repo_root/firmware/.pio/libdeps/paper-mono"
 if [[ ! -d "$dependency_root" ]]; then

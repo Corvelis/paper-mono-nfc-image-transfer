@@ -51,6 +51,7 @@ private final class NfcTransferManager: NSObject,
   private var sessionRestartAttempts = 0
   private var communicationRecoveryPending = false
   private var lastSystemProgressPercent = -1
+  private var languageCode = "ja"
   // Swift does not allow covariant `Self` in a stored-property initializer.
   private var dataPayloadLimit = 128
   // Core NFC releases the reader hardware asynchronously. Keep the session
@@ -58,6 +59,35 @@ private final class NfcTransferManager: NSObject,
   // can start while iOS still owns the previous RF session and fail with
   // resource-unavailable errors (typically NFCError 202/203).
   private var terminalAction: SessionTerminalAction?
+
+  private func updateLanguage(from arguments: [String: Any]?) {
+    languageCode = arguments?["language"] as? String == "en" ? "en" : "ja"
+  }
+
+  private func text(_ japanese: String, _ english: String) -> String {
+    languageCode == "en" ? english : japanese
+  }
+
+  private func localizedError(code: String, fallback: String) -> String {
+    switch code {
+    case "TIME_SYNC_UNSUPPORTED":
+      return text("Paper Monoが時刻同期に対応していません。", "Paper Mono does not support clock sync.")
+    case "FULLSCREEN_UNSUPPORTED":
+      return text("Paper Monoが全画面画像に対応していません。", "Paper Mono does not support full-screen images.")
+    case "INVALID_OFFSET", "TRANSFER_STALLED":
+      return text("Paper Monoから不正な受信位置が返されました。", "Paper Mono returned an invalid transfer position.")
+    case "TRANSFER_ID_MISMATCH":
+      return text("Paper Monoの転送IDが一致しません。", "The Paper Mono transfer ID does not match.")
+    case "COMMIT_TIMEOUT":
+      return text("Paper Monoの保存確認がタイムアウトしました。", "Timed out while waiting for Paper Mono to store the image.")
+    case "CRC_MISMATCH":
+      return text("Paper Monoで画像CRCが一致しませんでした。", "The image CRC did not match on Paper Mono.")
+    case "INVALID_JPEG":
+      return text("Paper MonoがJPEGを受け付けませんでした。", "Paper Mono rejected the JPEG.")
+    default:
+      return languageCode == "en" ? "The NFC operation failed (\(code))." : fallback
+    }
+  }
 
   init(messenger: FlutterBinaryMessenger) {
     super.init()
@@ -112,16 +142,18 @@ private final class NfcTransferManager: NSObject,
   }
 
   private func startTransfer(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+    let rawArguments = call.arguments as? [String: Any]
+    updateLanguage(from: rawArguments)
     guard NFCReaderSession.readingAvailable else {
       result(FlutterError(
         code: "NFC_UNAVAILABLE",
-        message: "このiPhoneではNFCタグ読み取りを利用できません。",
+        message: text("このiPhoneではNFCタグ読み取りを利用できません。", "NFC tag reading is unavailable on this iPhone."),
         details: nil
       ))
       return
     }
     guard
-      let arguments = call.arguments as? [String: Any],
+      let arguments = rawArguments,
       let typedBytes = arguments["bytes"] as? FlutterStandardTypedData,
       let mode = (arguments["mode"] as? NSNumber)?.uint8Value,
       let width = (arguments["width"] as? NSNumber)?.uint16Value,
@@ -131,7 +163,7 @@ private final class NfcTransferManager: NSObject,
     else {
       result(FlutterError(
         code: "INVALID_ARGUMENTS",
-        message: "送信パラメータが不足しています。",
+        message: text("送信パラメータが不足しています。", "Transfer parameters are missing."),
         details: nil
       ))
       return
@@ -143,7 +175,7 @@ private final class NfcTransferManager: NSObject,
     else {
       result(FlutterError(
         code: "INVALID_IMAGE",
-        message: "画像サイズまたは転送IDが不正です。",
+        message: text("画像サイズまたは転送IDが不正です。", "The image size or transfer ID is invalid."),
         details: nil
       ))
       return
@@ -160,7 +192,7 @@ private final class NfcTransferManager: NSObject,
       } else {
         result(FlutterError(
           code: "TRANSFER_IN_PROGRESS",
-          message: "別のNFC送信が進行中です。先に中止してください。",
+          message: text("別のNFC送信が進行中です。先に中止してください。", "Another NFC transfer is active. Cancel it first."),
           details: nil
         ))
       }
@@ -187,12 +219,12 @@ private final class NfcTransferManager: NSObject,
     terminalAction = nil
     guard beginReaderSession(
       totalBytes: bytes.count,
-      message: "PaperMonoにiPhoneを当ててください。"
+      message: text("Paper MonoにiPhoneを当ててください。", "Hold your iPhone near Paper Mono.")
     ) else {
       pendingTransfer = nil
       result(FlutterError(
         code: "NFC_SESSION_UNAVAILABLE",
-        message: "NFC読み取りセッションを開始できませんでした。",
+        message: text("NFC読み取りセッションを開始できませんでした。", "The NFC reader session could not be started."),
         details: nil
       ))
       return
@@ -201,23 +233,25 @@ private final class NfcTransferManager: NSObject,
   }
 
   private func syncClock(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+    let rawArguments = call.arguments as? [String: Any]
+    updateLanguage(from: rawArguments)
     guard NFCReaderSession.readingAvailable else {
       result(FlutterError(
         code: "NFC_UNAVAILABLE",
-        message: "このiPhoneではNFCタグ読み取りを利用できません。",
+        message: text("このiPhoneではNFCタグ読み取りを利用できません。", "NFC tag reading is unavailable on this iPhone."),
         details: nil
       ))
       return
     }
     guard
-      let arguments = call.arguments as? [String: Any],
+      let arguments = rawArguments,
       let unixTimeSeconds = (arguments["unixTimeSeconds"] as? NSNumber)?.uint64Value,
       let utcOffsetMinutes = (arguments["utcOffsetMinutes"] as? NSNumber)?.int16Value,
       validClock(unixTimeSeconds, utcOffsetMinutes)
     else {
       result(FlutterError(
         code: "INVALID_TIME",
-        message: "iPhoneの時刻またはタイムゾーンが不正です。",
+        message: text("iPhoneの時刻またはタイムゾーンが不正です。", "The iPhone time or time zone is invalid."),
         details: nil
       ))
       return
@@ -225,7 +259,7 @@ private final class NfcTransferManager: NSObject,
     guard session == nil, !sessionRestartPending else {
       result(FlutterError(
         code: "TRANSFER_IN_PROGRESS",
-        message: "別のNFC操作が進行中です。先に中止してください。",
+        message: text("別のNFC操作が進行中です。先に中止してください。", "Another NFC operation is active. Cancel it first."),
         details: nil
       ))
       return
@@ -248,12 +282,12 @@ private final class NfcTransferManager: NSObject,
     terminalAction = nil
     guard beginReaderSession(
       totalBytes: 0,
-      message: "Paper MonoにiPhoneを当ててください。"
+      message: text("Paper MonoにiPhoneを当ててください。", "Hold your iPhone near Paper Mono.")
     ) else {
       pendingTransfer = nil
       result(FlutterError(
         code: "NFC_SESSION_UNAVAILABLE",
-        message: "NFC読み取りセッションを開始できませんでした。",
+        message: text("NFC読み取りセッションを開始できませんでした。", "The NFC reader session could not be started."),
         details: nil
       ))
       return
@@ -277,8 +311,8 @@ private final class NfcTransferManager: NSObject,
       return false
     }
     newSession.alertMessage = lastSystemProgressPercent > 0
-      ? "再接続待ち: \(lastSystemProgressPercent)%まで受信済みです。"
-      : "PaperMonoにiPhone上部を当ててください。"
+      ? text("再接続待ち: \(lastSystemProgressPercent)%まで受信済みです。", "Waiting to reconnect: \(lastSystemProgressPercent)% received.")
+      : text("Paper MonoにiPhone上部を当ててください。", "Hold the top of your iPhone near Paper Mono.")
     sessionRestartPending = false
     session = newSession
     emit(phase: "waitingForTag", totalBytes: totalBytes, message: message)
@@ -290,8 +324,8 @@ private final class NfcTransferManager: NSObject,
     guard self.session === session else { return }
     print("[nfc.ios] reader session active")
     session.alertMessage = lastSystemProgressPercent > 0
-      ? "再接続待ち: \(lastSystemProgressPercent)%から再開します。"
-      : "PaperMonoを探しています。iPhone上部を当ててください。"
+      ? text("再接続待ち: \(lastSystemProgressPercent)%から再開します。", "Waiting to reconnect: resuming from \(lastSystemProgressPercent)%.")
+      : text("Paper Monoを探しています。iPhone上部を当ててください。", "Looking for Paper Mono. Hold the top of your iPhone near it.")
     emit(
       phase: "waitingForTag",
       totalBytes: pendingTransfer?.bytes.count ?? 0,
@@ -309,13 +343,13 @@ private final class NfcTransferManager: NSObject,
     communicationRecoveryPending = false
     print("[nfc.ios] detected tags=\(tags.count)")
     guard tags.count == 1, let first = tags.first else {
-      session.alertMessage = "NFCタグを1つだけ近づけてください。"
+      session.alertMessage = text("NFCタグを1つだけ近づけてください。", "Hold only one NFC tag nearby.")
       session.restartPolling()
       return
     }
     guard case let .miFare(tag) = first else {
       print("[nfc.ios] rejected non-MIFARE tag=\(first)")
-      session.alertMessage = "PaperMonoのMIFAREタグではありません。"
+      session.alertMessage = text("Paper MonoのMIFAREタグではありません。", "This is not a Paper Mono MIFARE tag.")
       session.restartPolling()
       return
     }
@@ -334,7 +368,7 @@ private final class NfcTransferManager: NSObject,
         return
       }
       print("[nfc.ios] connected uid=\(tag.identifier.hexString)")
-      session.alertMessage = "PaperMonoに接続しました。送信を開始します。"
+      session.alertMessage = text("Paper Monoに接続しました。送信を開始します。", "Connected to Paper Mono. Starting transfer.")
       self.emit(
         phase: "connected",
         totalBytes: transfer.bytes.count,
@@ -482,6 +516,13 @@ private final class NfcTransferManager: NSObject,
     transfer: PendingTransfer,
     capabilities: HelloCapabilities
   ) {
+    guard transfer.mode != 0x02 || capabilities.supportsFullscreenImage else {
+      failOrRecover(TransferError(
+        code: "FULLSCREEN_UNSUPPORTED",
+        message: "Paper Monoのファームウェアが全画面画像に対応していません。"
+      ))
+      return
+    }
     guard capabilities.maxAcceptedRfFrameBytes >= 63,
           capabilities.maxProtocolCommandBytes >= 61,
           capabilities.maxDataPayloadBytes >= 48,
@@ -605,7 +646,7 @@ private final class NfcTransferManager: NSObject,
   }
 
   private func sendCommit(tag: NFCMiFareTag, transfer: PendingTransfer) {
-    session?.alertMessage = "送信完了: 100%　受信データを確認しています。"
+    session?.alertMessage = text("送信完了: 100%　受信データを確認しています。", "Transfer complete: 100%. Checking received data.")
     exchange(
       tag: tag,
       command: PaperMonoProtocol.commit(
@@ -691,7 +732,7 @@ private final class NfcTransferManager: NSObject,
   ) throws {
     switch response.status {
     case .ok, .accepted, .verifying:
-      session?.alertMessage = "送信完了: 100%　CRCと画像を検証しています。"
+      session?.alertMessage = text("送信完了: 100%　CRCと画像を検証しています。", "Transfer complete: 100%. Verifying CRC and image.")
       emit(
         phase: "verifying",
         bytesSent: transfer.bytes.count,
@@ -699,7 +740,7 @@ private final class NfcTransferManager: NSObject,
         nextExpectedOffset: Int(response.nextExpectedOffset)
       )
     case .stored:
-      session?.alertMessage = "画像を保存しました。画面更新を待っています。"
+      session?.alertMessage = text("画像を保存しました。画面更新を待っています。", "Image stored. Waiting for the display update.")
       emit(
         phase: "stored",
         bytesSent: transfer.bytes.count,
@@ -707,7 +748,7 @@ private final class NfcTransferManager: NSObject,
         nextExpectedOffset: Int(response.nextExpectedOffset)
       )
     case .displaying:
-      session?.alertMessage = "PaperMonoの画面を更新しています。"
+      session?.alertMessage = text("Paper Monoの画面を更新しています。", "Updating the Paper Mono display.")
       emit(
         phase: "displaying",
         bytesSent: transfer.bytes.count,
@@ -740,7 +781,7 @@ private final class NfcTransferManager: NSObject,
     }
     lastSystemProgressPercent = percent
     session?.alertMessage = String(
-      format: "画像を送信中: %d%%（%.1f / %.1f KB）",
+      format: text("画像を送信中: %d%%（%.1f / %.1f KB）", "Sending image: %d%% (%.1f / %.1f KB)"),
       percent,
       Double(safeBytes) / 1024.0,
       Double(totalBytes) / 1024.0
@@ -856,15 +897,15 @@ private final class NfcTransferManager: NSObject,
 
   private func finish(transfer: PendingTransfer, completed: Bool) {
     session?.alertMessage = completed
-      ? "PaperMonoへの画像送信が完了しました。"
-      : "画像をPaperMonoへ保存しました。"
+      ? text("Paper Monoへの画像送信が完了しました。", "Image transfer to Paper Mono completed.")
+      : text("画像をPaper Monoへ保存しました。", "Image stored on Paper Mono.")
     pendingTransfer = nil
     activeTag = nil
     endSession(.finished(transfer: transfer, displayConfirmed: completed))
   }
 
   private func finishClockSync() {
-    session?.alertMessage = "Paper Monoの時刻を同期しました。"
+    session?.alertMessage = text("Paper Monoの時刻を同期しました。", "Paper Mono clock synchronized.")
     pendingTransfer = nil
     activeTag = nil
     endSession(.clockSynced)
@@ -930,15 +971,16 @@ private final class NfcTransferManager: NSObject,
         return
       }
       let totalBytes = pendingTransfer?.bytes.count ?? 0
+      let message = localizedError(code: transferError.code, fallback: transferError.message)
       pendingTransfer = nil
       activeTag = nil
       endSession(
         .failed(
           totalBytes: totalBytes,
-          message: transferError.message,
+          message: message,
           errorCode: transferError.code
         ),
-        errorMessage: transferError.message
+        errorMessage: message
       )
       return
     }
@@ -954,7 +996,7 @@ private final class NfcTransferManager: NSObject,
       message: "\(message) もう一度PaperMonoへ当てると途中から再開します。",
       errorCode: "TAG_LOST"
     )
-    session?.alertMessage = "接続が切れました。もう一度PaperMonoへ当ててください。"
+    session?.alertMessage = text("接続が切れました。もう一度Paper Monoへ当ててください。", "Connection lost. Hold your iPhone near Paper Mono again.")
     emit(
       phase: "waitingForTag",
       totalBytes: pendingTransfer?.bytes.count ?? 0,
@@ -1067,6 +1109,7 @@ private struct HelloCapabilities {
   let maxImageBytes: UInt32
   let supportsBaselineJpeg3Component: Bool
   let supportsTimeSync: Bool
+  let supportsFullscreenImage: Bool
 }
 
 private struct TransferError: Error {
@@ -1175,7 +1218,8 @@ private enum PaperMonoProtocol {
       maxDataPayloadBytes: response.extra.readUInt16LittleEndian(at: 4),
       maxImageBytes: response.extra.readUInt32LittleEndian(at: 6),
       supportsBaselineJpeg3Component: capabilityBits & 0x01 != 0,
-      supportsTimeSync: capabilityBits & 0x02 != 0
+      supportsTimeSync: capabilityBits & 0x02 != 0,
+      supportsFullscreenImage: capabilityBits & 0x04 != 0
     )
     guard capabilities.maxAcceptedRfFrameBytes <= 255,
           capabilities.maxProtocolCommandBytes <= 253,

@@ -15,6 +15,8 @@ int main() {
   static_assert(static_cast<uint8_t>(Command::Hello) == 0x01);
   static_assert(static_cast<uint8_t>(Command::Begin) == 0x02);
   static_assert(static_cast<uint8_t>(Command::Data) == 0x03);
+  static_assert(static_cast<uint8_t>(ImageMode::Dashboard) == 0x01);
+  static_assert(static_cast<uint8_t>(ImageMode::Fullscreen) == 0x02);
   static_assert(static_cast<uint8_t>(Command::Status) == 0x04);
   static_assert(static_cast<uint8_t>(Command::Commit) == 0x05);
   static_assert(static_cast<uint8_t>(Command::Abort) == 0x06);

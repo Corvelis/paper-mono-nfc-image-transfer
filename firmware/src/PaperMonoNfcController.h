@@ -6,6 +6,8 @@
 
 class PaperMonoNfcController {
 public:
+  static constexpr uint8_t kMaxReceivedImages = 17;
+
   using TimeSyncHandler = bool (*)(uint64_t unixSeconds,
                                    int16_t utcOffsetMinutes,
                                    void* context);
@@ -18,7 +20,9 @@ public:
     uint16_t height = 0;
     uint32_t size = 0;
     uint32_t crc32 = 0;
-    const char* path = nullptr;
+    char path[20] = {};
+    uint8_t slot = 0;
+    uint32_t sequence = 0;
   };
 
   PaperMonoNfcController();
@@ -36,6 +40,13 @@ public:
   bool modeActive() const;
   bool hardwareReady() const;
   bool getStoredImage(StoredImage& image) const;
+  uint8_t storedImageCount() const;
+  bool getStoredImageAt(uint8_t newestIndex, StoredImage& image) const;
+  bool selectStoredImageAt(uint8_t newestIndex);
+  bool selectDefaultImage();
+  bool defaultImageSelected() const;
+  bool deleteStoredImageAt(uint8_t newestIndex);
+  bool deleteStoredImages(uint32_t newestIndexMask);
   // Stops reception, removes the committed image and resets the transfer
   // state. The caller may then explicitly re-enable reception.
   bool clearStoredImage();

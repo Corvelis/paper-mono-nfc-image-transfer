@@ -96,7 +96,7 @@ python3 -m esptool --chip esp32s3 --port <PORT> --baud 460800 \
   write_flash 0x10000 paper-mono-nfc-image-transfer-vX.Y.Z-app.bin
 ```
 
-This does not write NVS or LittleFS, preserving the received image, step
+This does not write NVS or LittleFS, preserving the received image library, step
 history, goal, and time-zone setting. Do not use it when migrating from another
 project, when a Release changes partitions, or for recovery from an unbootable
 installation; use `full.bin` instead.
@@ -139,14 +139,21 @@ for the supported distribution paths.
 ## 6. First connection
 
 1. Hold `BtnA` on Paper Mono for about 0.7 seconds.
-2. Select `SYNC CLOCK` first and send UTC time plus the UTC offset from the app.
-3. Open the menu again, select `RECEIVE IMAGE`, choose an image in the app, and
-   send it.
+2. Select `RECEIVE IMAGE`.
+3. In the app, choose `時計と表示` (Clock + image, DASH) or `全画面` (Full
+   screen, FULL), crop the image, generate its monochrome preview, and send it.
 4. Keep the phone's NFC antenna against Paper Mono until completion is shown.
 
-Use `RESET IMAGE` to restore the embedded image; step history, goal, and clock
+Image transfer does not require clock synchronization. When you want to set the
+clock, open `SYNC CLOCK` on Paper Mono and use `NFCで時刻を同期` in the app.
+
+Use `RESET IMAGE` → `USE DEFAULT` to restore the embedded image. Select or
+delete received images in `IMAGE LIBRARY`; step history, goal, and clock
 settings remain intact. Press `BtnB` on the dashboard to enter the front-light-
 off low-power lock, and press it again to return.
+
+See the [operation guide](usage.en.md) for every button, touch, and deletion
+control.
 
 ## Troubleshooting
 
@@ -154,7 +161,7 @@ off low-power lock, and press it again to return.
 - Flashing waits for a connection: close serial monitors and recheck the port.
 - Android APK will not update: verify the origin and signing identity of both
   the installed app and Release APK.
-- NFC does not start: open `SYNC CLOCK` or `RECEIVE IMAGE` on Paper Mono first,
-  and enable NFC on the phone.
+- NFC does not start: open either `SYNC CLOCK` or `RECEIVE IMAGE` on Paper Mono
+  to match the app action, and enable NFC on the phone.
 - Transfer disconnects: find the phone's NFC antenna position and hold it still
   until the transfer completes.

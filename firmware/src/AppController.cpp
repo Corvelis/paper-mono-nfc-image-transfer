@@ -114,6 +114,44 @@ void AppController::showDashboard(bool quality) {
   lastValuesDrawMs_ = millis();
 }
 
+uint8_t AppController::imageLibraryTotal() const {
+  return static_cast<uint8_t>(nfc_.storedImageCount() + 1);
+}
+
+uint8_t AppController::imageLibraryPages() const {
+  return max<uint8_t>(1, static_cast<uint8_t>((imageLibraryTotal() + 5) / 6));
+}
+
+bool AppController::fullScreenImageActive() const {
+  PaperMonoNfcController::StoredImage image;
+  return nfc_.getStoredImage(image) &&
+         image.mode == PaperMonoNfcProtocol::ImageMode::Fullscreen;
+}
+
+void AppController::showImageLibrary() {
+  const uint8_t total = imageLibraryTotal();
+  libraryFocus_ = min<uint8_t>(libraryFocus_, total - 1);
+  libraryPage_ = min<uint8_t>(libraryFocus_ / 6, imageLibraryPages() - 1);
+  screen_ = Screen::ImageLibrary;
+  view_.drawImageLibrary(nfc_, libraryPage_, libraryFocus_,
+                         libraryDeleteMode_, libraryDeleteMask_);
+}
+
+void AppController::activateLibraryItem() {
+  const uint8_t received = nfc_.storedImageCount();
+  const bool selected = libraryFocus_ < received
+                            ? nfc_.selectStoredImageAt(libraryFocus_)
+                            : libraryFocus_ == received && nfc_.selectDefaultImage();
+  if (selected) showDashboard(true);
+  else showMessage("IMAGE LIBRARY", "COULD NOT SELECT IMAGE");
+}
+
+void AppController::toggleLibraryDeleteItem() {
+  if (libraryFocus_ >= nfc_.storedImageCount()) return;
+  libraryDeleteMask_ ^= 1UL << libraryFocus_;
+  showImageLibrary();
+}
+
 void AppController::showMessage(const char* title, const char* message) {
   nfc_.powerDown();
   recoverTouch("message");
@@ -172,9 +210,18 @@ void AppController::handleAShort() {
                                   view_.historyPageCount() - 1);
       view_.drawHistory(historyPage_);
       break;
-    case Screen::ResetConfirm:
+    case Screen::ResetImage:
+      resetAction_ = (resetAction_ + 1) % 3;
+      view_.drawResetImageMenu(resetAction_);
+      break;
+    case Screen::DeleteAllConfirm:
       resetSelected_ = !resetSelected_;
-      view_.drawResetConfirmation(resetSelected_);
+      view_.drawDeleteAllConfirmation(resetSelected_);
+      break;
+    case Screen::ImageLibrary:
+      libraryFocus_ = (libraryFocus_ + 1) % imageLibraryTotal();
+      libraryPage_ = libraryFocus_ / 6;
+      showImageLibrary();
       break;
     default:
       break;
@@ -187,6 +234,16 @@ void AppController::handleALong() {
   }
   if (screen_ == Screen::Nfc) {
     cancelNfc("button-a-hold");
+    return;
+  }
+  if (screen_ == Screen::ImageLibrary) {
+    if (libraryDeleteMode_) {
+      libraryDeleteMode_ = false;
+      libraryDeleteMask_ = 0;
+      showImageLibrary();
+    } else {
+      showDashboard();
+    }
     return;
   }
   if (screen_ == Screen::Dashboard) {
@@ -226,18 +283,34 @@ void AppController::handleBShort() {
       }
       view_.drawHistory(historyPage_);
       break;
-    case Screen::ResetConfirm:
-      if (!resetSelected_) {
-        showDashboard();
+    case Screen::ResetImage:
+      if (resetAction_ == 0) {
+        if (nfc_.selectDefaultImage()) showDashboard(true);
+        else showMessage("RESET IMAGE", "COULD NOT SELECT DEFAULT");
+      } else if (resetAction_ == 1) {
+        libraryDeleteMode_ = true;
+        libraryDeleteMask_ = 0;
+        libraryFocus_ = 0;
+        showImageLibrary();
       } else {
-        nfc_.powerDown();
-        const bool cleared = nfc_.clearStoredImage();
-        if (cleared) {
-          showDashboard(true);
-        } else {
-          showMessage("RESET IMAGE", "Could not clear the received image.");
-        }
+        resetSelected_ = false;
+        screen_ = Screen::DeleteAllConfirm;
+        view_.drawDeleteAllConfirmation(false);
       }
+      break;
+    case Screen::DeleteAllConfirm:
+      if (!resetSelected_) {
+        screen_ = Screen::ResetImage;
+        view_.drawResetImageMenu(resetAction_);
+      } else if (nfc_.clearStoredImage()) {
+        showDashboard(true);
+      } else {
+        showMessage("RESET IMAGE", "COULD NOT DELETE IMAGES");
+      }
+      break;
+    case Screen::ImageLibrary:
+      if (libraryDeleteMode_) toggleLibraryDeleteItem();
+      else activateLibraryItem();
       break;
     case Screen::Nfc:
       break;
@@ -245,6 +318,23 @@ void AppController::handleBShort() {
 }
 
 void AppController::handleBLong() {
+  if (!lowPower_ && screen_ == Screen::ImageLibrary) {
+    if (!libraryDeleteMode_) {
+      libraryDeleteMode_ = true;
+      libraryDeleteMask_ = 0;
+      showImageLibrary();
+    } else if (libraryDeleteMask_ != 0) {
+      if (nfc_.deleteStoredImages(libraryDeleteMask_)) {
+        libraryDeleteMask_ = 0;
+        libraryDeleteMode_ = false;
+        libraryFocus_ = 0;
+        showImageLibrary();
+      } else {
+        showMessage("IMAGE LIBRARY", "COULD NOT DELETE IMAGES");
+      }
+    }
+    return;
+  }
   if (!lowPower_ && screen_ == Screen::Goal) {
     if (steps_.setGoalSteps(candidateGoal_, millis())) {
       showDashboard();
@@ -273,11 +363,16 @@ void AppController::selectMenuItem(MenuItem item) {
       view_.drawHistory(historyPage_);
       break;
     case MenuItem::ResetImage:
-      resetSelected_ = false;
-      screen_ = Screen::ResetConfirm;
-      view_.drawResetConfirmation(resetSelected_);
+      resetAction_ = 0;
+      screen_ = Screen::ResetImage;
+      view_.drawResetImageMenu(resetAction_);
       break;
-    case MenuItem::Back:
+    case MenuItem::ImageLibrary:
+      libraryDeleteMode_ = false;
+      libraryDeleteMask_ = 0;
+      libraryFocus_ = 0;
+      showImageLibrary();
+      break;
     case MenuItem::Count:
       showDashboard();
       break;
@@ -310,11 +405,35 @@ void AppController::updateTouch() {
     return;
   }
   m5::touch_detail_t touch;
-  if (!normalizedTouch(touch)) {
+  const bool clicked = normalizedTouch(touch);
+  if (screen_ == Screen::ImageLibrary) {
+    if (touch.wasPressed()) {
+      libraryTouchTracking_ = true;
+      libraryTouchStartX_ = touch.x;
+      libraryTouchStartY_ = touch.y;
+    }
+    if (libraryTouchTracking_ && touch.wasReleased()) {
+      libraryTouchTracking_ = false;
+      const int32_t dx = static_cast<int32_t>(touch.x) - libraryTouchStartX_;
+      const int32_t dy = static_cast<int32_t>(touch.y) - libraryTouchStartY_;
+      if (abs(dx) >= 70 && abs(dx) > abs(dy) * 2) {
+        const uint8_t pages = imageLibraryPages();
+        const int8_t direction = dx < 0 ? 1 : -1;
+        libraryPage_ = static_cast<uint8_t>(
+            (libraryPage_ + pages + direction) % pages);
+        libraryFocus_ = min<uint8_t>(libraryPage_ * 6,
+                                     imageLibraryTotal() - 1);
+        showImageLibrary();
+        return;
+      }
+    }
+  }
+  if (!clicked) {
     return;
   }
   switch (screen_) {
     case Screen::Dashboard:
+      if (fullScreenImageActive()) break;
       if (view_.dateHit(touch.x, touch.y)) {
         if (clock_.valid()) {
           screen_ = Screen::Calendar;
@@ -327,9 +446,9 @@ void AppController::updateTouch() {
         screen_ = Screen::History;
         view_.drawHistory(historyPage_);
       } else if (view_.resetHit(touch.x, touch.y)) {
-        resetSelected_ = false;
-        screen_ = Screen::ResetConfirm;
-        view_.drawResetConfirmation(resetSelected_);
+        resetAction_ = 0;
+        screen_ = Screen::ResetImage;
+        view_.drawResetImageMenu(resetAction_);
       }
       break;
     case Screen::Menu: {
@@ -365,16 +484,76 @@ void AppController::updateTouch() {
         showDashboard();
       }
       break;
-    case Screen::ResetConfirm:
-      if (touch.y >= 420 && touch.y < 540) {
-        if (touch.x < 240) {
-          showDashboard();
-        } else {
-          resetSelected_ = true;
-          handleBShort();
+    case Screen::ResetImage: {
+      const int8_t action = view_.resetImageActionAt(touch.x, touch.y);
+      if (action >= 0) {
+        resetAction_ = static_cast<uint8_t>(action);
+        handleBShort();
+      }
+      break;
+    }
+    case Screen::DeleteAllConfirm:
+      if (touch.y >= 380 && touch.y < 510) {
+        resetSelected_ = touch.x >= 240;
+        handleBShort();
+      }
+      break;
+    case Screen::ImageLibrary: {
+      if (!libraryDeleteMode_ && view_.imageLibraryDeleteHit(touch.x, touch.y)) {
+        libraryDeleteMode_ = true;
+        libraryDeleteMask_ = 0;
+        showImageLibrary();
+        break;
+      }
+      const int8_t local = view_.imageLibraryCardAt(touch.x, touch.y);
+      if (local >= 0) {
+        const uint8_t global = libraryPage_ * 6 + static_cast<uint8_t>(local);
+        if (global < imageLibraryTotal()) {
+          libraryFocus_ = global;
+          if (libraryDeleteMode_) toggleLibraryDeleteItem();
+          else activateLibraryItem();
+        }
+        break;
+      }
+      if (libraryDeleteMode_ && touch.y >= 648 && touch.y < 730) {
+        if (touch.x < 190) {
+          libraryDeleteMode_ = false;
+          libraryDeleteMask_ = 0;
+          showImageLibrary();
+        } else if (touch.x > 290 && libraryDeleteMask_ != 0) {
+          if (nfc_.deleteStoredImages(libraryDeleteMask_)) {
+            libraryDeleteMode_ = false;
+            libraryDeleteMask_ = 0;
+            libraryFocus_ = 0;
+            showImageLibrary();
+          } else {
+            showMessage("IMAGE LIBRARY", "COULD NOT DELETE IMAGES");
+          }
+        }
+        break;
+      }
+      const int8_t direction = view_.imageLibraryPageDirectionAt(touch.x, touch.y);
+      if (!libraryDeleteMode_ && direction != 0) {
+        const uint8_t pages = imageLibraryPages();
+        libraryPage_ = static_cast<uint8_t>(
+            (libraryPage_ + pages + direction) % pages);
+        libraryFocus_ = min<uint8_t>(libraryPage_ * 6,
+                                     imageLibraryTotal() - 1);
+        showImageLibrary();
+      } else if (!libraryDeleteMode_ && touch.y >= 648 && touch.y < 730 &&
+                 touch.x >= 190 && touch.x < 290) {
+        const uint8_t pages = imageLibraryPages();
+        const int32_t firstDot = 240 - static_cast<int32_t>(pages - 1) * 12;
+        const int32_t tapped = (touch.x - firstDot + 12) / 24;
+        if (tapped >= 0 && tapped < pages) {
+          libraryPage_ = static_cast<uint8_t>(tapped);
+          libraryFocus_ = min<uint8_t>(libraryPage_ * 6,
+                                       imageLibraryTotal() - 1);
+          showImageLibrary();
         }
       }
       break;
+    }
     case Screen::Message:
       showDashboard();
       break;
@@ -415,8 +594,7 @@ void AppController::updateNfc(uint32_t now) {
     delay(120);
     nfc_.powerDown();
     recoverTouch("time_sync");
-    view_.drawMessage("SYNC CLOCK", "TIME SYNCED", "B: BACK");
-    screen_ = Screen::Message;
+    showDashboard();
     return;
   }
   if (nfc_.phase() == PaperMonoNfcProtocol::Phase::Displaying) {
@@ -498,9 +676,7 @@ void AppController::enterLowPower() {
   nfc_.powerDown();
   lowPower_ = true;
   steps_.saveNow(millis());
-  PaperMonoNfcController::StoredImage image;
-  const bool hasImage = nfc_.getStoredImage(image);
-  view_.drawDashboard(true, hasImage ? &image : nullptr);
+  if (!fullScreenImageActive()) view_.drawValuesPartial(true, true);
   disableTouch();
   M5.Display.setBrightness(0);
   activeCpuMhz_ = getCpuFrequencyMhz();
@@ -521,16 +697,19 @@ void AppController::exitLowPower() {
   lowPower_ = false;
   recoverTouch("low_power_wake");
   M5.Display.setBrightness(PAPER_MONO_FRONT_LIGHT_BRIGHTNESS);
-  showDashboard();
+  if (!fullScreenImageActive()) view_.drawValuesPartial(false, true);
+  lastValuesDrawMs_ = millis();
 }
 
 void AppController::updateLowPower(uint32_t now) {
   if (now - lastValuesDrawMs_ >= PAPER_MONO_LOCKED_UPDATE_MS) {
+    if (fullScreenImageActive()) {
+      lastValuesDrawMs_ = now;
+      return;
+    }
     ++partialRefreshes_;
-    PaperMonoNfcController::StoredImage image;
-    const bool hasImage = nfc_.getStoredImage(image);
     if (partialRefreshes_ >= PAPER_MONO_FULL_REFRESH_AFTER_PARTIALS) {
-      view_.drawDashboard(true, hasImage ? &image : nullptr, true);
+      view_.drawValuesPartial(true, true);
       partialRefreshes_ = 0;
     } else {
       view_.drawValuesPartial(true);
@@ -570,15 +749,16 @@ void AppController::update() {
 
   updateTouch();
   if (screen_ == Screen::Dashboard &&
+      !fullScreenImageActive() &&
       now - lastValuesDrawMs_ >= PAPER_MONO_LOCKED_UPDATE_MS) {
     ++partialRefreshes_;
     if (partialRefreshes_ >= PAPER_MONO_FULL_REFRESH_AFTER_PARTIALS) {
-      showDashboard(true);
+      view_.drawValuesPartial(false, true);
       partialRefreshes_ = 0;
     } else {
       view_.drawValuesPartial(false);
-      lastValuesDrawMs_ = millis();
     }
+    lastValuesDrawMs_ = millis();
   }
   delay(2);
 }

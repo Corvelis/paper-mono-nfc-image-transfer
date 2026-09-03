@@ -29,7 +29,7 @@ class ImageProcessor {
   ) {
     final decoded = img.decodeImage(croppedBytes);
     if (decoded == null) {
-      throw const FormatException('選択された画像をデコードできませんでした。');
+      throw const FormatException('IMAGE_DECODE_FAILED');
     }
 
     final resized = img.copyResize(
@@ -54,7 +54,7 @@ class ImageProcessor {
     }
 
     Uint8List? jpeg;
-    for (final quality in const <int>[80, 75, 70, 65, 60]) {
+    for (final quality in const <int>[80, 75, 70, 65, 60, 55, 50, 45, 40, 35]) {
       final candidate = img.encodeJpg(
         rgb,
         quality: quality,
@@ -66,20 +66,20 @@ class ImageProcessor {
       }
     }
     if (jpeg == null) {
-      throw const FormatException('JPEGを256KB以下に圧縮できませんでした。');
+      throw const FormatException('IMAGE_TOO_LARGE_AFTER_COMPRESSION');
     }
 
     final info = JpegInspector.inspect(jpeg);
     if (!info.isPaperMonoV1Compatible ||
         info.width != mode.width ||
         info.height != mode.height) {
-      throw const FormatException('生成されたJPEGがPaperMono v1仕様に適合しません。');
+      throw const FormatException('GENERATED_JPEG_INVALID');
     }
     final verification = img.decodeJpg(jpeg);
     if (verification == null ||
         verification.width != mode.width ||
         verification.height != mode.height) {
-      throw const FormatException('生成されたJPEGの再デコード検証に失敗しました。');
+      throw const FormatException('JPEG_VERIFY_FAILED');
     }
 
     return PreparedImage(

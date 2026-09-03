@@ -32,12 +32,16 @@ jobs:
         run: echo "version=$(bash scripts/check_version.sh)" >> "$GITHUB_OUTPUT"
       - name: Build and package firmware
         run: bash scripts/package_firmware.sh
-      - name: Protocol host test
+      - name: Firmware host tests
         run: |
           c++ -std=c++17 -Ifirmware/src \
             firmware/test/papermono_nfc_protocol_test.cpp \
             -o /tmp/paper_mono_protocol_test
           /tmp/paper_mono_protocol_test
+          c++ -std=c++17 -Ifirmware/src \
+            firmware/test/battery_level_estimator_test.cpp \
+            -o /tmp/paper_mono_battery_test
+          /tmp/paper_mono_battery_test
       - run: python -m json.tool protocol/test_vectors.json >/dev/null
       - uses: actions/upload-artifact@v4
         with:

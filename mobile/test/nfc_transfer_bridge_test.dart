@@ -36,21 +36,23 @@ void main() {
       createdAt: DateTime.utc(2026),
     );
 
-    await bridge.start(image);
+    await bridge.start(image, languageCode: 'en');
 
     expect(captured?.method, 'startTransfer');
     final arguments = Map<Object?, Object?>.from(captured?.arguments as Map);
     expect(arguments['transferId'], image.transferId);
+    expect(arguments['language'], 'en');
     expect(arguments.containsKey('unixTimeSeconds'), isFalse);
     expect(arguments.containsKey('utcOffsetMinutes'), isFalse);
   });
 
   test('explicit clock sync includes current clock arguments', () async {
-    await bridge.syncClock();
+    await bridge.syncClock(languageCode: 'ja');
 
     expect(captured?.method, 'syncClock');
     final arguments = Map<Object?, Object?>.from(captured?.arguments as Map);
     expect(arguments['unixTimeSeconds'], isA<int>());
     expect(arguments['utcOffsetMinutes'], isA<int>());
+    expect(arguments['language'], 'ja');
   });
 }
