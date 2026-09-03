@@ -16,11 +16,11 @@ Paper Mono固有部分を
 
 ## デモ動画
 
-<a href="docs/media/paper-mono-nfc-demo.mp4"><img src="docs/media/paper-mono-nfc-demo-poster.jpg" alt="NFC画像送信とImage Libraryのデモ動画" width="360"></a>
+https://github.com/user-attachments/assets/00aa38d3-8c7d-4caa-bd35-abe908107b0f
 
 スマートフォンからNFCで画像を送信する流れと、Paper Monoの`IMAGE LIBRARY`から
 保存画像を選んで全画面表示へ切り替える流れを、約46秒の無音動画で確認できます。
-上の画像をクリックすると動画を開きます。
+上のプレイヤーから直接再生できます。
 
 ## リポジトリ構成
 

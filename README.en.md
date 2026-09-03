@@ -17,11 +17,11 @@ shared multi-device firmware.
 
 ## Demo video
 
-<a href="docs/media/paper-mono-nfc-demo.mp4"><img src="docs/media/paper-mono-nfc-demo-poster.jpg" alt="NFC image transfer and Image Library demo" width="360"></a>
+https://github.com/user-attachments/assets/00aa38d3-8c7d-4caa-bd35-abe908107b0f
 
 This silent 46-second demo shows an image being sent from a phone over NFC,
 then a saved image being selected in `IMAGE LIBRARY` and opened full-screen.
-Click the image above to play the video.
+Use the player above to watch it directly from GitHub.
 
 ## What is included
 
