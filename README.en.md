@@ -10,16 +10,11 @@ This is an unofficial, community-maintained project for **M5Stack Paper Mono
 C153**. Paper Mono Lite does not contain the NFC hardware required by this
 project.
 
-The Paper Mono-specific code was extracted from
-[`Corvelis/stackchan-pet-fw`](https://github.com/Corvelis/stackchan-pet-fw) so
-this focused product can evolve without adding maintenance burden to the
-shared multi-device firmware.
-
 ## Demo video
 
 https://github.com/user-attachments/assets/00aa38d3-8c7d-4caa-bd35-abe908107b0f
 
-This silent 46-second demo shows an image being sent from a phone over NFC,
+This demo shows an image being sent from a phone over NFC,
 then a saved image being selected in `IMAGE LIBRARY` and opened full-screen.
 Use the player above to watch it directly from GitHub.
 
