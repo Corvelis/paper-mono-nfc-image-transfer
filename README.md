@@ -9,18 +9,12 @@ AndroidまたはiPhoneからM5Stack Paper MonoへNFCで画像を送り、時計�
 対象はNFCを搭載する **M5Stack Paper Mono C153** です。NFCを搭載しない
 Paper Mono Liteには対応しません。本プロジェクトは非公式のコミュニティ実装です。
 
-Paper Mono固有部分を
-[`Corvelis/stackchan-pet-fw`](https://github.com/Corvelis/stackchan-pet-fw)
-から独立させ、共有のマルチデバイスファームウェアへ保守負担を持ち込まずに
-開発できる構成にしています。
-
 ## デモ動画
 
 https://github.com/user-attachments/assets/00aa38d3-8c7d-4caa-bd35-abe908107b0f
 
 スマートフォンからNFCで画像を送信する流れと、Paper Monoの`IMAGE LIBRARY`から
-保存画像を選んで全画面表示へ切り替える流れを、約46秒の無音動画で確認できます。
-上のプレイヤーから直接再生できます。
+保存画像を選んで全画面表示へ切り替える流れを、動画で確認できます。
 
 ## リポジトリ構成
 
@@ -86,9 +80,6 @@ Protocol v1ではスマートフォンからPaper Monoへ画像を送ります�
 - iPhone: TestFlight/App Store公開後は公式リンクを掲載。それまではXcodeで実機ビルド
 - メンテナー: [署名設定とGitHub Release作成](docs/releasing.ja.md)
 
-GitHub Actionsの通常CIにあるAndroid APKはデバッグ用です。一般利用・再配布には
-GitHub Releaseの署名済み`android.apk`を使用してください。
-
 ## ビルド
 
 ファームウェア:
@@ -108,8 +99,7 @@ flutter run
 ```
 
 iPhone版の実機ビルドには、NFC対応iPhone、NFC Tag Reading capability、
-およびXcodeで各自設定するDeveloper Teamが必要です。署名情報は
-リポジトリへコミットしません。
+およびXcodeで各自設定するDeveloper Teamが必要です。
 
 ## デフォルト画像
 
